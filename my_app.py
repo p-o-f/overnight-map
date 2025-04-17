@@ -60,7 +60,8 @@ def get_ticker_info(ticker):
     res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # pretend to be a regular FireFox browser
     data = res.json()
     #print(data)
-    supports_overnight = data['last_non_reg_trade_price'] != data['last_extended_hours_trade_price']
+    
+    supports_overnight = data['last_non_reg_trade_price'] != data['last_extended_hours_trade_price'] # can use tickers like ASML, RNMBY, SFTBY to test this 
     print(supports_overnight)
     last_regular_trade_price = float(data['last_trade_price'])
     overnight_price = float(data['last_non_reg_trade_price'])
