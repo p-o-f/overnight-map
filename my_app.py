@@ -8,43 +8,9 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from tqdm import tqdm 
 
 
-def get_sp500_symbols():
-    url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
-    response = requests.get(url)
-    data = response.json()[0]
-    symbols = []
-    for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
-        symbols.append(company[0])
-    return symbols
-    
-
-def get_nasdaq_symbols():   
-    url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
-    response = requests.get(url)
-    data = response.json()[0]
-    symbols = []
-    for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
-        symbols.append(company[1])
-    return symbols
-
-nasdaq_symbols = get_nasdaq_symbols()
-sp500_symbols = get_sp500_symbols()
-
-
-class company_list:
-    overnight_mode = False # universal class attribute
-
-    def __init__(self, symbol):
-        self.symbol = symbol
-        
-    def overnight_mode(self):
-        overnight_mode = (not self.overnight_mode) # instance attribute
-        
-
-
-    
 def get_robinhood_bearer_token():
     # Set up Chrome options for headless browsing
     chrome_options = Options()
@@ -109,12 +75,11 @@ def get_ticker_instrument_id(ticker): # does NOT require a bearer token or any t
     url = f"https://api.robinhood.com/quotes/{ticker}/"
     response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # pretend to be a regular FireFox browser
     data = response.json()
-    print(data)
     return data["instrument_id"]
 
 
 
-def get_latest_quote_by_instrument_id(bearer_token, instrument_id="8f92e76f-1e0e-4478-8580-16a6ffcfaef5"): # default instrument_id is "8f92e76f-1e0e-4478-8580-16a6ffcfaef5" for SPY
+def get_latest_quote_by_instrument_id(bearer_token, instrument_id): 
     url = f"https://bonfire.robinhood.com/instruments/{instrument_id}/detail-page-live-updating-data/"
 
     params = {
@@ -122,7 +87,7 @@ def get_latest_quote_by_instrument_id(bearer_token, instrument_id="8f92e76f-1e0e
         "hide_extended_hours": "false"
     }
 
-    headers = {
+    headers = { # Taken from Network tab in Chrome DevTools
         "authority": "bonfire.robinhood.com",
         "accept": "*/*",
         "accept-encoding": "gzip, deflate, br, zstd",
@@ -147,21 +112,76 @@ def get_latest_quote_by_instrument_id(bearer_token, instrument_id="8f92e76f-1e0e
 
     # Check if the request was successful
     if response.status_code == 200:
-        data = response.json()  # Parse the JSON response
+        data = response.json()  
         #print(data.keys())
         #print(data['chart_section']['quote'])
         #print(data.items())  # Print the response data once
+        last_trade_price = data['chart_section']['quote']['last_trade_price']
         last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price']
         extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price']
-
-        # Print the values
+        previous_close_price = data['chart_section']['quote']['previous_close']
+        adjusted_previous_close_price = data['chart_section']['quote']['adjusted_previous_close']
+        dollar_change = round(float(adjusted_previous_close_price) - float(last_non_reg_price), 2)
+        percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
+        overnight = previous_close_price != last_non_reg_price
+        # for debug
+        '''
         print(f"Last non-regular trade price: {last_non_reg_price}")
         print(f"Last extended hours trade price: {extended_hours_price}")
+        print(f"Last trade price: {last_trade_price}")
+        print(f"Previous close price: {previous_close_price}")
+        print(f"Adjusted previous close price: {adjusted_previous_close_price}")
+        print(dollar_change)
+        print(percent_change)
+        '''
+        
+        return dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
+        
     else:
-        print(f"Request failed with status code: {response.status_code}")
-        print(response.text)
-
+        return 0 
 
 token = get_robinhood_bearer_token()
-QQQ = get_ticker_instrument_id("QQQ")
-get_latest_quote_by_instrument_id(token, QQQ)
+# QQQ = get_ticker_instrument_id("QQQ")
+# get_latest_quote_by_instrument_id(token, QQQ)
+
+
+def get_sp500_index_info():
+    url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
+    response = requests.get(url)
+    data = response.json()[0]
+    stock_attributes = []
+    for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
+        stock_attributes.append([company[0], company[2], company[3]])  
+    return stock_attributes
+    
+
+def get_nasdaq_index_info():   
+    url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
+    response = requests.get(url)
+    data = response.json()[0]
+    stock_attributes = []
+    for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
+        stock_attributes.append([company[1], company[2], company[3]])
+    return stock_attributes
+
+
+spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Symbol", "Sector", "Subsector"])
+nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Symbol", "Sector", "Subsector"])
+
+# Create empty columns first
+price_columns = ["Price Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price", 
+                "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"]
+for col in price_columns:
+    spx_df[col] = None
+
+# Update row by row using loc
+for index, row in spx_df.iterrows():
+    symbol = row['Symbol']
+    try:
+        values = get_latest_quote_by_instrument_id(token, get_ticker_instrument_id(symbol))
+        if values != 0:  # Check if we got valid data
+            spx_df.loc[index, price_columns] = values
+    except Exception as e:
+        print(f"Error processing {symbol}: {e}")
+
+print(spx_df)
