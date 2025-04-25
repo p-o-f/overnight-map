@@ -126,6 +126,8 @@ def get_latest_quote_by_instrument_id(bearer_token, instrument_id):
         #print(data.items())  # Print the response data once
        
         last_trade_price = data['chart_section']['quote']['last_trade_price']
+        if last_trade_price is None:
+            last_trade_price = 0
         last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price']
         extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price']
         previous_close_price = data['chart_section']['quote']['previous_close']
@@ -232,6 +234,14 @@ begin = time.time()
 
 spx_df = create_spx_df()
 print(spx_df.head())
+
+end = time.time()
+print(f"Time taken: {end - begin} seconds")
+
+begin = time.time()
+
+nasdaq_df = create_nasdaq_df()
+print(nasdaq_df.head())
 
 end = time.time()
 print(f"Time taken: {end - begin} seconds")
