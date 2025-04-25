@@ -13,12 +13,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # Plotly 
-# import plotly.graph_objects as go
-# import plotly.express as px
-# import dash
-# import pyotp
-# from dash import dcc, html
-# from dash.dependencies import Input, Output
+import plotly.graph_objects as go
+import plotly.express as px
+import dash
+import pyotp
+from dash import dcc, html
+from dash.dependencies import Input, Output
 
 
 def get_robinhood_bearer_token():
@@ -149,6 +149,7 @@ def get_fundamentals_by_instrument_id(instrument_id):
     if response.status_code == 200:
         data = response.json()
         market_cap = data['market_cap']
+        #print(data)
         #volume = data['volume']
         #average_volume = data['average_volume'] # avg volume for last 2 weeks
         
@@ -165,7 +166,7 @@ def get_sp500_index_info():
     data = response.json()[0]
     stock_attributes = []
     for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
-        stock_attributes.append([company[0], company[2], company[3]])  
+        stock_attributes.append([company[1], company[0], company[2], company[3]])  
     return stock_attributes
     
 
@@ -175,7 +176,7 @@ def get_nasdaq_index_info():
     data = response.json()[0]
     stock_attributes = []
     for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
-        stock_attributes.append([company[1], company[2], company[3]])
+        stock_attributes.append([company[0], company[1], company[2], company[3]])
     return stock_attributes
 
 
@@ -187,8 +188,7 @@ price_columns = ["Price Change", "Percent Change", "Last Trade Price", "Last Non
 
 
 def create_spx_df():
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Symbol", "Sector", "Subsector"])
-    
+    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
     for col in price_columns:
         spx_df[col] = None
     # Update row by row using loc
@@ -203,13 +203,12 @@ def create_spx_df():
                 spx_df.loc[index, price_columns] = values
         except Exception as e:
             print(f"Error processing {symbol}: {e}")
-            print(get_fundamentals_by_instrument_id)
-            print(get_latest_quote_by_instrument_id(token, symbol_id))
     
     return spx_df
 
+
 def create_nasdaq_df():
-    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Symbol", "Sector", "Subsector"])
+    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
     
     for col in price_columns:
         nasdaq_df[col] = None
@@ -225,28 +224,26 @@ def create_nasdaq_df():
                 nasdaq_df.loc[index, price_columns] = values
         except Exception as e:
             print(f"Error processing {symbol}: {e}")
-            print(get_fundamentals_by_instrument_id)
-            print(get_latest_quote_by_instrument_id(token, symbol_id))
-    
+
     return nasdaq_df
 
-# begin = time.time()
+begin = time.time()
 
-# spx_df = create_spx_df()
-# print(spx_df.head())
+spx_df = create_spx_df()
+print(spx_df.head())
 
-# end = time.time()
-# print(f"Time taken: {end - begin} seconds")
+end = time.time()
+print(f"Time taken: {end - begin} seconds")
 
-# begin = time.time()
+begin = time.time()
 
-# nasdaq_df = create_nasdaq_df()
-# print(nasdaq_df.head())
+nasdaq_df = create_nasdaq_df()
+print(nasdaq_df.head())
 
-# end = time.time()
-# print(f"Time taken: {end - begin} seconds")
+end = time.time()
+print(f"Time taken: {end - begin} seconds")
 
-print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("GOOGL")))
-#print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("WST")))
+# print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("GOOGL")))
+# print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("GOOGL")))
 
 
