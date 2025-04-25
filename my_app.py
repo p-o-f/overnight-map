@@ -132,7 +132,7 @@ def get_latest_quote_by_instrument_id(bearer_token, instrument_id):
         extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price']
         previous_close_price = data['chart_section']['quote']['previous_close']
         adjusted_previous_close_price = data['chart_section']['quote']['adjusted_previous_close']
-        dollar_change = round(float(adjusted_previous_close_price) - float(last_non_reg_price), 2)
+        dollar_change = round(float(last_non_reg_price) - float(adjusted_previous_close_price), 2)
         percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
         overnight = previous_close_price != last_non_reg_price
         
@@ -230,23 +230,23 @@ def create_nasdaq_df():
     
     return nasdaq_df
 
-begin = time.time()
+# begin = time.time()
 
-spx_df = create_spx_df()
-print(spx_df.head())
+# spx_df = create_spx_df()
+# print(spx_df.head())
 
-end = time.time()
-print(f"Time taken: {end - begin} seconds")
+# end = time.time()
+# print(f"Time taken: {end - begin} seconds")
 
-begin = time.time()
+# begin = time.time()
 
-nasdaq_df = create_nasdaq_df()
-print(nasdaq_df.head())
+# nasdaq_df = create_nasdaq_df()
+# print(nasdaq_df.head())
 
-end = time.time()
-print(f"Time taken: {end - begin} seconds")
+# end = time.time()
+# print(f"Time taken: {end - begin} seconds")
 
-#print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("WST")))
+print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("GOOGL")))
 #print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("WST")))
 
 
