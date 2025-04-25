@@ -71,6 +71,7 @@ def get_robinhood_bearer_token():
 def get_ticker_instrument_id(ticker): # does NOT require a bearer token or any type of authentication
     url = f"https://api.robinhood.com/quotes/{ticker}/"
     response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # pretend to be a regular FireFox browser
+    print(response.text)
     data = response.json()
     return data["instrument_id"]
 
@@ -112,6 +113,7 @@ def get_latest_quote_by_instrument_id(bearer_token, instrument_id):
         #print(data.keys())
         #print(data['chart_section']['quote'])
         #print(data.items())  # Print the response data once
+       
         last_trade_price = data['chart_section']['quote']['last_trade_price']
         last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price']
         extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price']
@@ -123,6 +125,23 @@ def get_latest_quote_by_instrument_id(bearer_token, instrument_id):
         
         return dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
         
+    else:
+        return 0 # Return 0 if the request failed
+
+
+def get_fundamentals_by_instrument_id(instrument_id): 
+    url = f"https://api.robinhood.com/marketdata/fundamentals/{instrument_id}/?bounds=trading&include_inactive=true"
+    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # pretend to be a regular FireFox browser
+    
+    if response.status_code == 200:
+        data = response.json()
+        market_cap = data['market_cap']
+        #volume = data['volume']
+        #average_volume = data['average_volume'] # avg volume for last 2 weeks
+        
+        return market_cap #, volume, average_volume
+    
+
     else:
         return 0 # Return 0 if the request failed
 
@@ -146,30 +165,53 @@ def get_nasdaq_index_info():
         stock_attributes.append([company[1], company[2], company[3]])
     return stock_attributes
 
+
 token = get_robinhood_bearer_token()
 
 spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Symbol", "Sector", "Subsector"])
 nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Symbol", "Sector", "Subsector"])
 
-# Create empty columns first
+# Create empty columns for index dataframes
 price_columns = ["Price Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price", 
-                "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"]
+                "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight", "Market Cap"]
 
 begin = time.time()
+
 for col in price_columns:
     spx_df[col] = None
+    nasdaq_df[col] = None
 
 # Update row by row using loc
 for index, row in spx_df.iterrows():
     symbol = row['Symbol']
     try:
-        values = get_latest_quote_by_instrument_id(token, get_ticker_instrument_id(symbol))
+        symbol_id = get_ticker_instrument_id(symbol)
+        values = get_latest_quote_by_instrument_id(token, symbol_id)
+        values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values
+        
         if values != 0:  # Check if we got valid data
             spx_df.loc[index, price_columns] = values
     except Exception as e:
         print(f"Error processing {symbol}: {e}")
 
+for index, row in nasdaq_df.iterrows():
+    symbol = row['Symbol']
+    try:
+        symbol_id = get_ticker_instrument_id(symbol)
+        values = get_latest_quote_by_instrument_id(token, symbol_id)
+        values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values
+        
+        if values != 0:  # Check if we got valid data
+            nasdaq_df.loc[index, price_columns] = values
+    except Exception as e:
+        print(f"Error processing {symbol}: {e}")
+        
 print(spx_df)
+print(nasdaq_df)
 
 end = time.time()
 print(f"Time taken: {end - begin} seconds")
+
+#print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("NFLX")))
+
+
