@@ -3,11 +3,22 @@ import requests
 import pandas as pd
 import re
 import json
+import numpy as np
+
+# Selenium 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+# Plotly 
+# import plotly.graph_objects as go
+# import plotly.express as px
+# import dash
+# import pyotp
+# from dash import dcc, html
+# from dash.dependencies import Input, Output
 
 
 def get_robinhood_bearer_token():
@@ -168,50 +179,64 @@ def get_nasdaq_index_info():
 
 token = get_robinhood_bearer_token()
 
-spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Symbol", "Sector", "Subsector"])
-nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Symbol", "Sector", "Subsector"])
-
-# Create empty columns for index dataframes
+# Create empty columns to add to index dataframes
 price_columns = ["Price Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price", 
                 "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight", "Market Cap"]
 
+
+def create_spx_df():
+    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Symbol", "Sector", "Subsector"])
+    
+    for col in price_columns:
+        spx_df[col] = None
+    # Update row by row using loc
+    for index, row in spx_df.iterrows():
+        symbol = row['Symbol']
+        try:
+            symbol_id = get_ticker_instrument_id(symbol)
+            values = list(get_latest_quote_by_instrument_id(token, symbol_id))
+            values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values list
+            
+            if values != 0:  # Check if we got valid data
+                spx_df.loc[index, price_columns] = values
+        except Exception as e:
+            print(f"Error processing {symbol}: {e}")
+            print(get_fundamentals_by_instrument_id)
+            print(get_latest_quote_by_instrument_id(token, symbol_id))
+    
+    return spx_df
+
+def create_nasdaq_df():
+    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Symbol", "Sector", "Subsector"])
+    
+    for col in price_columns:
+        nasdaq_df[col] = None
+    # Update row by row using loc
+    for index, row in nasdaq_df.iterrows():
+        symbol = row['Symbol']
+        try:
+            symbol_id = get_ticker_instrument_id(symbol)
+            values = list(get_latest_quote_by_instrument_id(token, symbol_id))
+            values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values list
+            
+            if values != 0:  # Check if we got valid data
+                nasdaq_df.loc[index, price_columns] = values
+        except Exception as e:
+            print(f"Error processing {symbol}: {e}")
+            print(get_fundamentals_by_instrument_id)
+            print(get_latest_quote_by_instrument_id(token, symbol_id))
+    
+    return nasdaq_df
+
 begin = time.time()
 
-for col in price_columns:
-    spx_df[col] = None
-    nasdaq_df[col] = None
-
-# Update row by row using loc
-for index, row in spx_df.iterrows():
-    symbol = row['Symbol']
-    try:
-        symbol_id = get_ticker_instrument_id(symbol)
-        values = list(get_latest_quote_by_instrument_id(token, symbol_id))
-        values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values list
-        
-        if values != 0:  # Check if we got valid data
-            spx_df.loc[index, price_columns] = values
-    except Exception as e:
-        print(f"Error processing {symbol}: {e}")
-
-for index, row in nasdaq_df.iterrows():
-    symbol = row['Symbol']
-    try:
-        symbol_id = get_ticker_instrument_id(symbol)
-        values = list(get_latest_quote_by_instrument_id(token, symbol_id) )
-        values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values list
-        
-        if values != 0:  # Check if we got valid data
-            nasdaq_df.loc[index, price_columns] = values
-    except Exception as e:
-        print(f"Error processing {symbol}: {e}")
-        
-print(spx_df)
-print(nasdaq_df)
+spx_df = create_spx_df()
+print(spx_df.head())
 
 end = time.time()
 print(f"Time taken: {end - begin} seconds")
 
-#print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("NFLX")))
+#print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("WST")))
+#print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("WST")))
 
 
