@@ -8,7 +8,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from tqdm import tqdm 
 
 
 def get_robinhood_bearer_token():
@@ -20,7 +19,7 @@ def get_robinhood_bearer_token():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     
-    # Optional: Add user agent to mimic a real browser
+    # Add user agent to mimic a real browser
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
     
     # Enable logging for network requests
@@ -69,14 +68,11 @@ def get_robinhood_bearer_token():
         driver.quit()
         
         
-        
-
 def get_ticker_instrument_id(ticker): # does NOT require a bearer token or any type of authentication
     url = f"https://api.robinhood.com/quotes/{ticker}/"
     response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # pretend to be a regular FireFox browser
     data = response.json()
     return data["instrument_id"]
-
 
 
 def get_latest_quote_by_instrument_id(bearer_token, instrument_id): 
@@ -124,25 +120,11 @@ def get_latest_quote_by_instrument_id(bearer_token, instrument_id):
         dollar_change = round(float(adjusted_previous_close_price) - float(last_non_reg_price), 2)
         percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
         overnight = previous_close_price != last_non_reg_price
-        # for debug
-        '''
-        print(f"Last non-regular trade price: {last_non_reg_price}")
-        print(f"Last extended hours trade price: {extended_hours_price}")
-        print(f"Last trade price: {last_trade_price}")
-        print(f"Previous close price: {previous_close_price}")
-        print(f"Adjusted previous close price: {adjusted_previous_close_price}")
-        print(dollar_change)
-        print(percent_change)
-        '''
         
         return dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
         
     else:
-        return 0 
-
-token = get_robinhood_bearer_token()
-# QQQ = get_ticker_instrument_id("QQQ")
-# get_latest_quote_by_instrument_id(token, QQQ)
+        return 0 # Return 0 if the request failed
 
 
 def get_sp500_index_info():
@@ -164,6 +146,7 @@ def get_nasdaq_index_info():
         stock_attributes.append([company[1], company[2], company[3]])
     return stock_attributes
 
+token = get_robinhood_bearer_token()
 
 spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Symbol", "Sector", "Subsector"])
 nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Symbol", "Sector", "Subsector"])
@@ -171,6 +154,8 @@ nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Symbol", "Sector", "
 # Create empty columns first
 price_columns = ["Price Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price", 
                 "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"]
+
+begin = time.time()
 for col in price_columns:
     spx_df[col] = None
 
@@ -185,3 +170,6 @@ for index, row in spx_df.iterrows():
         print(f"Error processing {symbol}: {e}")
 
 print(spx_df)
+
+end = time.time()
+print(f"Time taken: {end - begin} seconds")
