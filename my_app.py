@@ -186,8 +186,8 @@ for index, row in spx_df.iterrows():
     symbol = row['Symbol']
     try:
         symbol_id = get_ticker_instrument_id(symbol)
-        values = get_latest_quote_by_instrument_id(token, symbol_id) + tuple(get_fundamentals_by_instrument_id(symbol_id)) # note if in the future we want to add volume and average volume, can get rid of tuple typecasting
-
+        values = list(get_latest_quote_by_instrument_id(token, symbol_id))
+        values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values list
         
         if values != 0:  # Check if we got valid data
             spx_df.loc[index, price_columns] = values
@@ -198,7 +198,8 @@ for index, row in nasdaq_df.iterrows():
     symbol = row['Symbol']
     try:
         symbol_id = get_ticker_instrument_id(symbol)
-        values = get_latest_quote_by_instrument_id(token, symbol_id) + tuple(get_fundamentals_by_instrument_id(symbol_id)) # note if in the future we want to add volume and average volume, can get rid of tuple typecasting
+        values = list(get_latest_quote_by_instrument_id(token, symbol_id) )
+        values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values list
         
         if values != 0:  # Check if we got valid data
             nasdaq_df.loc[index, price_columns] = values
