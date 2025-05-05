@@ -20,6 +20,9 @@ import pyotp
 from dash import dcc, html
 from dash.dependencies import Input, Output
 
+# Performance optimizations
+import concurrent.futures
+import functools
 
 def get_robinhood_bearer_token():
     # Set up Chrome options for headless browsing
