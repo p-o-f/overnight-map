@@ -23,6 +23,9 @@ from dash.dependencies import Input, Output
 # Performance optimizations
 import concurrent.futures
 import functools
+import asyncio
+import aiohttp
+import random
 
 def get_robinhood_bearer_token():
     # Set up Chrome options for headless browsing
@@ -88,7 +91,6 @@ def get_ticker_instrument_id(ticker): # does NOT require a bearer token or any t
     #(response.text)
     data = response.json()
     return data["instrument_id"]
-
 
 def get_latest_quote_by_instrument_id(bearer_token, instrument_id): 
     url = f"https://bonfire.robinhood.com/instruments/{instrument_id}/detail-page-live-updating-data/"
@@ -230,23 +232,70 @@ def create_nasdaq_df():
 
     return nasdaq_df
 
-begin = time.time()
+# begin = time.time()
 
-spx_df = create_spx_df()
-print(spx_df.head())
+# spx_df = create_spx_df()
+# print(spx_df.head())
 
-end = time.time()
-print(f"Time taken: {end - begin} seconds")
+# end = time.time()
+# print(f"Time taken: {end - begin} seconds")
 
-begin = time.time()
+# begin = time.time()
 
-nasdaq_df = create_nasdaq_df()
-print(nasdaq_df.head())
+# nasdaq_df = create_nasdaq_df()
+# print(nasdaq_df.head())
 
-end = time.time()
-print(f"Time taken: {end - begin} seconds")
+# end = time.time()
+# print(f"Time taken: {end - begin} seconds")
+print("TEST")
 
 # print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("GOOGL")))
 # print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("GOOGL")))
 
 
+# Set this once
+MAX_RETRIES = 3
+CONCURRENT_REQUESTS = 50  # Tune this higher/lower based on network stability
+
+async def fetch_json(session, url, headers=None, retries=MAX_RETRIES):
+    for attempt in range(retries):
+        try:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    print(f"Non-200 response {response.status} for {url}")
+        except Exception as e:
+            print(f"Attempt {attempt+1} failed for {url}: {e}")
+        await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
+    return None
+
+async def fetch_instrument_ids(session, token, symbol):
+    try:
+        # Step 1: Get instrument ID
+        url_id = f"https://api.robinhood.com/quotes/{symbol}/"
+        basic_headers = {"User-Agent": "Mozilla/5.0"}
+        id_data = await fetch_json(session, url_id, basic_headers)
+        if not id_data or 'instrument_id' not in id_data:
+            return symbol, [None] * 9
+
+        instrument_id = id_data['instrument_id']
+        return instrument_id
+    except Exception as e:
+        print(f"Error fetching instrument ID for {symbol}: {e}")
+
+async def fetch_all_symbols(symbols, token):
+    connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = []
+        for symbol in symbols:
+            task = fetch_instrument_ids(session, token, symbol)
+            tasks.append(task)
+            await asyncio.sleep(0.05)  # Small sleep between submissions (safe)
+        results = await asyncio.gather(*tasks)
+    return results
+
+spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
+symbols = spx_df['Symbol'].tolist()
+results = asyncio.run(fetch_all_symbols(symbols, token))
+print(results)
