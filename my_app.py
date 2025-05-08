@@ -27,6 +27,7 @@ import asyncio
 import aiohttp
 import random
 
+
 def get_robinhood_bearer_token():
     # Set up Chrome options for headless browsing
     chrome_options = Options()
@@ -46,7 +47,7 @@ def get_robinhood_bearer_token():
     driver = webdriver.Chrome(options=chrome_options)
     
     try:
-        # Navigate to a specific stock page
+        # Navigate to any specific stock page
         print("Navigating to S&P 500 ETF page...")
         driver.get("https://robinhood.com/stocks/SPY")
         time.sleep(2)  # Wait for page to load
@@ -91,6 +92,7 @@ def get_ticker_instrument_id(ticker): # does NOT require a bearer token or any t
     #(response.text)
     data = response.json()
     return data["instrument_id"]
+
 
 def get_latest_quote_by_instrument_id(bearer_token, instrument_id): 
     url = f"https://bonfire.robinhood.com/instruments/{instrument_id}/detail-page-live-updating-data/"
@@ -149,7 +151,7 @@ def get_latest_quote_by_instrument_id(bearer_token, instrument_id):
 
 def get_fundamentals_by_instrument_id(instrument_id): 
     url = f"https://api.robinhood.com/marketdata/fundamentals/{instrument_id}/?bounds=trading&include_inactive=true"
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # pretend to be a regular FireFox browser
+    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # Pretend to be a regular FireFox browser
     
     if response.status_code == 200:
         data = response.json()
@@ -160,7 +162,6 @@ def get_fundamentals_by_instrument_id(instrument_id):
         
         return market_cap #, volume, average_volume
     
-
     else:
         return 0 # Return 0 if the request failed
 
@@ -253,14 +254,15 @@ print("TEST")
 # print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("GOOGL")))
 
 
-# Set this once
-MAX_RETRIES = 3
-CONCURRENT_REQUESTS = 50  # Tune this higher/lower based on network stability
+# Constants for async requests
+MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
+CONCURRENT_REQUESTS = 50  # Can be tuned higher/lower based on network stability
 
-async def fetch_json(session, url, headers=None, retries=MAX_RETRIES):
+
+async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIES):
     for attempt in range(retries):
         try:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
                     return await response.json()
                 else:
@@ -268,19 +270,64 @@ async def fetch_json(session, url, headers=None, retries=MAX_RETRIES):
         except Exception as e:
             print(f"Attempt {attempt+1} failed for {url}: {e}")
         await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
-    return None
+    return None #TODO <-- fix this line later to do something more useful
 
-async def fetch_instrument_ids(session, token, symbol):
+
+async def fetch_symbol_metrics(session, token, symbol):
     try:
-        # Step 1: Get instrument ID
-        url_id = f"https://api.robinhood.com/quotes/{symbol}/"
         basic_headers = {"User-Agent": "Mozilla/5.0"}
-        id_data = await fetch_json(session, url_id, basic_headers)
-        if not id_data or 'instrument_id' not in id_data:
-            return symbol, [None] * 9
-
+        complex_headers = { # Taken from Network tab in Chrome DevTools; these are the headers that are required to get the data
+            "authority": "bonfire.robinhood.com",
+            "accept": "*/*",
+            "accept-encoding": "gzip, deflate, br, zstd",
+            "accept-language": "en-US,en;q=0.9",
+            "authorization": f"Bearer {token}",
+            "dnt": "1",
+            "origin": "https://robinhood.com",
+            "priority": "u=1, i",
+            "referer": "https://robinhood.com/",
+            "sec-ch-ua": "\"Google Chrome\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\"",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-site",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+            "x-hyper-ex": "enabled"
+        }
+        
+        # Step 1: Get instrument ID
+        instrument_id_url = f"https://api.robinhood.com/quotes/{symbol}/"
+        id_data = await fetch_json(session, instrument_id_url, basic_headers)
         instrument_id = id_data['instrument_id']
-        return instrument_id
+
+        # Step 2: Get market cap
+        fundamental_data_url = f"https://api.robinhood.com/marketdata/fundamentals/{instrument_id}/?bounds=trading&include_inactive=true"
+        fundamental_data = await fetch_json(session, fundamental_data_url, basic_headers)
+        market_cap = fundamental_data['market_cap']
+        volume = fundamental_data['volume']
+        average_volume = fundamental_data['average_volume'] # avg volume for last 2 weeks
+        
+        # Step 3: Get latest quote
+        quote_url = f"https://bonfire.robinhood.com/instruments/{instrument_id}/detail-page-live-updating-data/"
+        quote_params = {
+            "display_span": "day",
+            "hide_extended_hours": "false"
+        }
+        data = await fetch_json(session, quote_url, complex_headers, quote_params)
+        last_trade_price = data['chart_section']['quote']['last_trade_price']
+        if last_trade_price is None:
+            last_trade_price = 0
+        last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price']
+        extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price']
+        previous_close_price = data['chart_section']['quote']['previous_close']
+        adjusted_previous_close_price = data['chart_section']['quote']['adjusted_previous_close']
+        dollar_change = round(float(last_non_reg_price) - float(adjusted_previous_close_price), 2)
+        percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
+        overnight = previous_close_price != last_non_reg_price
+        
+        return instrument_id, market_cap, volume, average_volume, dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
+
     except Exception as e:
         print(f"Error fetching instrument ID for {symbol}: {e}")
 
@@ -289,13 +336,22 @@ async def fetch_all_symbols(symbols, token):
     async with aiohttp.ClientSession(connector=connector) as session:
         tasks = []
         for symbol in symbols:
-            task = fetch_instrument_ids(session, token, symbol)
+            task = fetch_symbol_metrics(session, token, symbol)
             tasks.append(task)
             await asyncio.sleep(0.05)  # Small sleep between submissions (safe)
         results = await asyncio.gather(*tasks)
     return results
 
+begin = time.time()
+
 spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
 symbols = spx_df['Symbol'].tolist()
 results = asyncio.run(fetch_all_symbols(symbols, token))
-print(results)
+metrics_df = pd.DataFrame(results, columns=["Instrument ID", "Market Cap", "Volume", "Average Volume", "Dollar Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price",
+                    "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
+combined_df = pd.concat([spx_df, metrics_df], axis=1)
+print(combined_df.head())
+
+end = time.time()
+
+print(f"Time taken: {end - begin} seconds")
