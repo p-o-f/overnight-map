@@ -28,6 +28,26 @@ import aiohttp
 import random
 
 
+def get_sp500_index_info():
+    url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
+    response = requests.get(url)
+    data = response.json()[0]
+    stock_attributes = []
+    for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
+        stock_attributes.append([company[1], company[0], company[2], company[3]])  
+    return stock_attributes
+    
+
+def get_nasdaq_index_info():   
+    url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
+    response = requests.get(url)
+    data = response.json()[0]
+    stock_attributes = []
+    for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
+        stock_attributes.append([company[0], company[1], company[2], company[3]])
+    return stock_attributes
+
+
 def get_robinhood_bearer_token():
     # Set up Chrome options for headless browsing
     chrome_options = Options()
@@ -85,7 +105,7 @@ def get_robinhood_bearer_token():
         print("Closing browser...")
         driver.quit()
         
-        
+''' ------------------------- Old code that is not used anymore
 def get_ticker_instrument_id(ticker): # does NOT require a bearer token or any type of authentication
     url = f"https://api.robinhood.com/quotes/{ticker}/"
     response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # pretend to be a regular FireFox browser
@@ -166,26 +186,6 @@ def get_fundamentals_by_instrument_id(instrument_id):
         return 0 # Return 0 if the request failed
 
 
-def get_sp500_index_info():
-    url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
-    response = requests.get(url)
-    data = response.json()[0]
-    stock_attributes = []
-    for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
-        stock_attributes.append([company[1], company[0], company[2], company[3]])  
-    return stock_attributes
-    
-
-def get_nasdaq_index_info():   
-    url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
-    response = requests.get(url)
-    data = response.json()[0]
-    stock_attributes = []
-    for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
-        stock_attributes.append([company[0], company[1], company[2], company[3]])
-    return stock_attributes
-
-
 token = get_robinhood_bearer_token()
 
 # Create empty columns to add to index dataframes
@@ -232,27 +232,28 @@ def create_nasdaq_df():
             print(f"Error processing {symbol}: {e}")
 
     return nasdaq_df
+'''
 
+''' -------------------------Example usage of commented out code 
 # begin = time.time()
 
-# spx_df = create_spx_df()
-# print(spx_df.head())
+spx_df = create_spx_df()
+print(spx_df.head())
 
-# end = time.time()
-# print(f"Time taken: {end - begin} seconds")
+end = time.time()
+print(f"Time taken: {end - begin} seconds")
 
-# begin = time.time()
+begin = time.time()
 
-# nasdaq_df = create_nasdaq_df()
-# print(nasdaq_df.head())
+nasdaq_df = create_nasdaq_df()
+print(nasdaq_df.head())
 
-# end = time.time()
-# print(f"Time taken: {end - begin} seconds")
-print("TEST")
+end = time.time()
+print(f"Time taken: {end - begin} seconds")
 
-# print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("GOOGL")))
-# print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("GOOGL")))
-
+print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("GOOGL")))
+print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("GOOGL")))
+'''
 
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
@@ -344,6 +345,7 @@ async def fetch_all_symbols(symbols, token):
 
 begin = time.time()
 
+token = get_robinhood_bearer_token()
 spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
 symbols = spx_df['Symbol'].tolist()
 results = asyncio.run(fetch_all_symbols(symbols, token))
