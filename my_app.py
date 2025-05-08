@@ -21,7 +21,6 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 
 # Performance optimizations
-import concurrent.futures
 import functools
 import asyncio
 import aiohttp
@@ -195,15 +194,27 @@ async def fetch_symbol_metrics(session, token, symbol):
         print(f"Error fetching instrument ID for {symbol}: {e}")
 
 
+async def fetch_symbol_metrics_limited(session, token, symbol):
+    sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
+    async with sem:
+        # This will limit the number of concurrent requests to CONCURRENT_REQUESTS
+        return await fetch_symbol_metrics(session, token, symbol)
+
+
 async def fetch_all_symbols(symbols, token):
     connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = []
-        for symbol in symbols:
-            task = fetch_symbol_metrics(session, token, symbol)
-            tasks.append(task)
-            await asyncio.sleep(0.05)  # Small sleep between submissions (safe)
+        #---------------------------------------------------------------------------------- To use this without sempahore 
+        # tasks = []
+        # for symbol in symbols:
+        #     task = fetch_symbol_metrics(session, token, symbol)
+        #     tasks.append(task)
+        #     await asyncio.sleep(0.02)  # Small sleep between submissions (safe)
+        # results = await asyncio.gather(*tasks)
+        #----------------------------------------------------------------------------------
+        tasks = [fetch_symbol_metrics_limited(session, token, symbol) for symbol in symbols]
         results = await asyncio.gather(*tasks)
+
     return results
 
 
@@ -220,6 +231,8 @@ if __name__ == "__main__":
                         "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
     spx_total_df = pd.concat([spx_df, metrics_df], axis=1)
     spx_total_df = spx_total_df[spx_total_df["Symbol"] != "GOOGL"] # Remove GOOGL from S&P 500 DataFrame
+    
+    #time.sleep(3)
     
     nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
     nasdaq_symbols = nasdaq_df['Symbol'].tolist()
