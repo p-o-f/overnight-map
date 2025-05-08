@@ -219,6 +219,7 @@ if __name__ == "__main__":
     metrics_df = pd.DataFrame(spx_results, columns=["Instrument ID", "Market Cap", "Volume", "Average Volume", "Dollar Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price",
                         "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
     spx_total_df = pd.concat([spx_df, metrics_df], axis=1)
+    spx_total_df = spx_total_df[spx_total_df["Name"] != "GOOGL"] # Remove GOOGL from S&P 500 DataFrame
     
     nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
     nasdaq_symbols = nasdaq_df['Symbol'].tolist()
@@ -226,11 +227,15 @@ if __name__ == "__main__":
     metrics_df = pd.DataFrame(nasdaq_results, columns=["Instrument ID", "Market Cap", "Volume", "Average Volume", "Dollar Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price",
                         "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
     nasdaq_total_df = pd.concat([nasdaq_df, metrics_df], axis=1)
-    
+    nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["Name"] != "GOOGL"] # Remove GOOGL from NASDAQ DataFrame
+
     print("S&P 500 Data:")
     print(spx_total_df.head())
+    print(spx_total_df.shape)
+    
     print("\nNASDAQ Data:")
     print(nasdaq_total_df.head())
+    print(nasdaq_total_df.shape)
     
     
     end = time.time()
