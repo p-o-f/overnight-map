@@ -27,6 +27,10 @@ import asyncio
 import aiohttp
 import random
 
+# Constants for async requests
+MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
+CONCURRENT_REQUESTS = 50  # Can be tuned higher/lower based on network stability
+
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -104,160 +108,6 @@ def get_robinhood_bearer_token():
         # Always close the browser
         print("Closing browser...")
         driver.quit()
-        
-''' ------------------------- Old code that is not used anymore
-def get_ticker_instrument_id(ticker): # does NOT require a bearer token or any type of authentication
-    url = f"https://api.robinhood.com/quotes/{ticker}/"
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # pretend to be a regular FireFox browser
-    #(response.text)
-    data = response.json()
-    return data["instrument_id"]
-
-
-def get_latest_quote_by_instrument_id(bearer_token, instrument_id): 
-    url = f"https://bonfire.robinhood.com/instruments/{instrument_id}/detail-page-live-updating-data/"
-
-    params = {
-        "display_span": "day",
-        "hide_extended_hours": "false"
-    }
-
-    headers = { # Taken from Network tab in Chrome DevTools
-        "authority": "bonfire.robinhood.com",
-        "accept": "*/*",
-        "accept-encoding": "gzip, deflate, br, zstd",
-        "accept-language": "en-US,en;q=0.9",
-        "authorization": f"Bearer {bearer_token}",
-        "dnt": "1",
-        "origin": "https://robinhood.com",
-        "priority": "u=1, i",
-        "referer": "https://robinhood.com/",
-        "sec-ch-ua": "\"Google Chrome\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\"",
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": "\"Windows\"",
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-site",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-        "x-hyper-ex": "enabled"
-    }
-
-    # Make a single GET request
-    response = requests.get(url, params=params, headers=headers)
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        data = response.json()  
-        #print(data.keys())
-        #print(data['chart_section']['quote'])
-        #print(data.items())  # Print the response data once
-       
-        last_trade_price = data['chart_section']['quote']['last_trade_price']
-        if last_trade_price is None:
-            last_trade_price = 0
-        last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price']
-        extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price']
-        previous_close_price = data['chart_section']['quote']['previous_close']
-        adjusted_previous_close_price = data['chart_section']['quote']['adjusted_previous_close']
-        dollar_change = round(float(last_non_reg_price) - float(adjusted_previous_close_price), 2)
-        percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
-        overnight = previous_close_price != last_non_reg_price
-        
-        return dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
-        
-    else:
-        return 0 # Return 0 if the request failed
-
-
-def get_fundamentals_by_instrument_id(instrument_id): 
-    url = f"https://api.robinhood.com/marketdata/fundamentals/{instrument_id}/?bounds=trading&include_inactive=true"
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) # Pretend to be a regular FireFox browser
-    
-    if response.status_code == 200:
-        data = response.json()
-        market_cap = data['market_cap']
-        #print(data)
-        #volume = data['volume']
-        #average_volume = data['average_volume'] # avg volume for last 2 weeks
-        
-        return market_cap #, volume, average_volume
-    
-    else:
-        return 0 # Return 0 if the request failed
-
-
-token = get_robinhood_bearer_token()
-
-# Create empty columns to add to index dataframes
-price_columns = ["Price Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price", 
-                "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight", "Market Cap"]
-
-
-def create_spx_df():
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
-    for col in price_columns:
-        spx_df[col] = None
-    # Update row by row using loc
-    for index, row in spx_df.iterrows():
-        symbol = row['Symbol']
-        try:
-            symbol_id = get_ticker_instrument_id(symbol)
-            values = list(get_latest_quote_by_instrument_id(token, symbol_id))
-            values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values list
-            
-            if values != 0:  # Check if we got valid data
-                spx_df.loc[index, price_columns] = values
-        except Exception as e:
-            print(f"Error processing {symbol}: {e}")
-    
-    return spx_df
-
-
-def create_nasdaq_df():
-    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
-    
-    for col in price_columns:
-        nasdaq_df[col] = None
-    # Update row by row using loc
-    for index, row in nasdaq_df.iterrows():
-        symbol = row['Symbol']
-        try:
-            symbol_id = get_ticker_instrument_id(symbol)
-            values = list(get_latest_quote_by_instrument_id(token, symbol_id))
-            values.append(get_fundamentals_by_instrument_id(symbol_id))  # Append market cap to the values list
-            
-            if values != 0:  # Check if we got valid data
-                nasdaq_df.loc[index, price_columns] = values
-        except Exception as e:
-            print(f"Error processing {symbol}: {e}")
-
-    return nasdaq_df
-'''
-
-''' -------------------------Example usage of commented out code 
-# begin = time.time()
-
-spx_df = create_spx_df()
-print(spx_df.head())
-
-end = time.time()
-print(f"Time taken: {end - begin} seconds")
-
-begin = time.time()
-
-nasdaq_df = create_nasdaq_df()
-print(nasdaq_df.head())
-
-end = time.time()
-print(f"Time taken: {end - begin} seconds")
-
-print(get_latest_quote_by_instrument_id(token, get_ticker_instrument_id("GOOGL")))
-print(get_fundamentals_by_instrument_id(get_ticker_instrument_id("GOOGL")))
-'''
-
-# Constants for async requests
-MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
-CONCURRENT_REQUESTS = 50  # Can be tuned higher/lower based on network stability
 
 
 async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIES):
@@ -277,7 +127,7 @@ async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIE
 async def fetch_symbol_metrics(session, token, symbol):
     try:
         basic_headers = {"User-Agent": "Mozilla/5.0"}
-        complex_headers = { # Taken from Network tab in Chrome DevTools; these are the headers that are required to get the data
+        complex_headers = { # Taken from Network tab in Chrome DevTools; these are the headers that are required to get live quote data
             "authority": "bonfire.robinhood.com",
             "accept": "*/*",
             "accept-encoding": "gzip, deflate, br, zstd",
@@ -327,10 +177,12 @@ async def fetch_symbol_metrics(session, token, symbol):
         percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
         overnight = previous_close_price != last_non_reg_price
         
+        # Process and return everything important as a tuple
         return instrument_id, market_cap, volume, average_volume, dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
 
     except Exception as e:
         print(f"Error fetching instrument ID for {symbol}: {e}")
+
 
 async def fetch_all_symbols(symbols, token):
     connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
@@ -343,17 +195,33 @@ async def fetch_all_symbols(symbols, token):
         results = await asyncio.gather(*tasks)
     return results
 
-begin = time.time()
 
-token = get_robinhood_bearer_token()
-spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
-symbols = spx_df['Symbol'].tolist()
-results = asyncio.run(fetch_all_symbols(symbols, token))
-metrics_df = pd.DataFrame(results, columns=["Instrument ID", "Market Cap", "Volume", "Average Volume", "Dollar Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price",
-                    "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
-combined_df = pd.concat([spx_df, metrics_df], axis=1)
-print(combined_df.head())
+if __name__ == "__main__":
+    token = get_robinhood_bearer_token()
+    
+    begin = time.time()
 
-end = time.time()
 
-print(f"Time taken: {end - begin} seconds")
+    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
+    spx_symbols = spx_df['Symbol'].tolist()
+    spx_results = asyncio.run(fetch_all_symbols(spx_symbols, token))
+    metrics_df = pd.DataFrame(spx_results, columns=["Instrument ID", "Market Cap", "Volume", "Average Volume", "Dollar Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price",
+                        "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
+    spx_total_df = pd.concat([spx_df, metrics_df], axis=1)
+    
+    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
+    nasdaq_symbols = nasdaq_df['Symbol'].tolist()
+    nasdaq_results = asyncio.run(fetch_all_symbols(nasdaq_symbols, token))
+    metrics_df = pd.DataFrame(nasdaq_results, columns=["Instrument ID", "Market Cap", "Volume", "Average Volume", "Dollar Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price",
+                        "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
+    nasdaq_total_df = pd.concat([nasdaq_df, metrics_df], axis=1)
+    
+    print("S&P 500 Data:")
+    print(spx_total_df.head())
+    print("\nNASDAQ Data:")
+    print(nasdaq_total_df.head())
+    
+    
+    end = time.time()
+
+    print(f"Time taken: {end - begin} seconds")
