@@ -249,14 +249,13 @@ def create_heat_map(dataframe):
     # Create Plotly treemap
     fig = px.treemap(
         dataframe,
-        path=['sector', 'subsector', 'symbol_with_change'], 
+        path=[px.Constant(" "), 'sector', 'subsector', 'symbol_with_change'], 
         values='transformed_market_cap',
         color='percent_change',
         color_continuous_scale=color_scale, 
         range_color=(-3.1,3.1),
         custom_data=['percent_change', "last_non_reg_price", "name"] # solely affects the hover text (tooltips)
     )
-
     # Adjust annotation position and style
     fig.update_traces(
         textposition='middle center',
@@ -266,11 +265,14 @@ def create_heat_map(dataframe):
                     'Last price: $%{customdata[1]:,.2f}<br>' + 
                     '<extra></extra>'
     )
-
+    fig.update_traces(marker_line_width = 0.0, marker_line_color=black)
+    fig.update_traces(marker=dict(cornerradius=5))
+    fig.update_traces(pathbar_visible=False)
+    #fig.update_traces(tiling=dict(pad=0, packing='binary'))
 
     # Modify the colorbar
     fig.update_layout(
-        paper_bgcolor='white',  # or any desired background color
+        paper_bgcolor='gray',  # or any desired background color
         plot_bgcolor='white',
         coloraxis_colorbar=dict(
             title="Rolling % Change",
@@ -288,7 +290,7 @@ def create_heat_map(dataframe):
 
 # Set the layout of the app
 app.layout = html.Div([
-    html.H1("Overnight Stock Market Heat Map"),
+    html.H1("Overnight Stock Market Heat Map", style={'color': 'white'}),
     dcc.Graph(id='heatmap-graph'),
     dcc.Interval(
         id='interval-component',
