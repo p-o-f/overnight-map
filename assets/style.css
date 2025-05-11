@@ -1,0 +1,35 @@
+/* Make sure the entire app takes up the full screen and is scroll-free */
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    height: 100%;
+    width: 100%;
+    background-color: white;
+    font-family: "Segoe UI", Roboto, sans-serif;
+}
+
+/* Ensure the root div stretches correctly */
+#_dash-app-content {
+    height: 100%;
+    width: 100%;
+}
+
+/* Center the H1 title and remove extra spacing */
+h1 {
+    text-align: center;
+    margin: 0;
+    padding: 15px 0;
+    font-size: 2em;
+    color: #222;
+    background-color: rgb(255, 255, 255);
+}
+
+/* Optional: tweak the graph container */
+#heatmap-graph {
+    width: 100vw !important;
+    height: calc(100vh - 60px) !important; /* adjust based on H1 height */
+    padding: 0;
+    margin: 0;
+    display: block;
+}

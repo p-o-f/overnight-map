@@ -270,6 +270,8 @@ def create_heat_map(dataframe):
 
     # Modify the colorbar
     fig.update_layout(
+        paper_bgcolor='white',  # or any desired background color
+        plot_bgcolor='white',
         coloraxis_colorbar=dict(
             title="Rolling % Change",
             thicknessmode="pixels", thickness=20,
@@ -286,14 +288,14 @@ def create_heat_map(dataframe):
 
 # Set the layout of the app
 app.layout = html.Div([
-    html.H1("Overnight Stock Market Heat Map", style={'textAlign': 'center'}),
-    dcc.Graph(id='heatmap-graph', style={'width': '100%', 'height': '90vh'}),
+    html.H1("Overnight Stock Market Heat Map"),
+    dcc.Graph(id='heatmap-graph'),
     dcc.Interval(
         id='interval-component',
-        interval=300*1000,  # in milliseconds, update every 5 minutes
+        interval=300*1000,  # 5 minutes
         n_intervals=0
     )
-], style={'padding': '0 20px', 'max-width': '100vw', 'overflow': 'hidden'})
+])
 
 
 # Define callback to update the graph
