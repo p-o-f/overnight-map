@@ -30,6 +30,10 @@ import random
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
 CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
 
+# Initialize the Dash app
+app = dash.Dash(__name__)
+server = app.server  # This is for Gunicorn to use
+
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -165,7 +169,7 @@ async def fetch_symbol_metrics(session, token, symbol):
         # Step 2: Get market cap
         fundamental_data_url = f"https://api.robinhood.com/marketdata/fundamentals/{instrument_id}/?bounds=trading&include_inactive=true"
         fundamental_data = await fetch_json(session, fundamental_data_url, basic_headers)
-        market_cap = fundamental_data['market_cap']
+        market_cap = float(fundamental_data['market_cap'])
         volume = fundamental_data['volume']
         average_volume = fundamental_data['average_volume'] # avg volume for last 2 weeks
         
@@ -218,39 +222,137 @@ async def fetch_all_symbols(symbols, token):
     return results
 
 
-if __name__ == "__main__":
+def create_heat_map(dataframe):    
+    palette = {
+        -3: "#e74b3e", -2: "#b44b48", -1: "#84494e",
+        0: "#414553", 1: "#457351", 2: "#509957", 3: "#63c667"
+    }
+    
+    black = "#262930"
+    
+    # Define a custom diverging color scale with more granularity around ±1%
+    color_scale = [
+        [0.0, palette[-3]], [0.125, palette[-2]], [0.25, palette[-1]], 
+        [0.5, palette[0]], [0.75, palette[1]], [0.875, palette[2]], [1.0, palette[3]]
+    ]
+
+    # Apply a power transformation to the market cap values
+    power = 0.6  # Adjust this value to control the transformation strength
+    dataframe['transformed_market_cap'] = np.power(dataframe['market_cap'], power)
+
+    # Create a new column that combines the name with the percentage change and create symbol_with_change column with HTML formatting
+    dataframe['symbol_with_change'] = dataframe.apply(
+        lambda row: f"<span style='font-size: larger; color: white;'>{row['symbol']}</span><br><span style='color: white;'>{row['percent_change']:+.2f}%</span>",
+        axis=1
+    )
+
+    # Create Plotly treemap
+    fig = px.treemap(
+        dataframe,
+        path=['sector', 'subsector', 'symbol_with_change'], 
+        values='transformed_market_cap',
+        color='percent_change',
+        color_continuous_scale=color_scale, 
+        range_color=(-3.1,3.1),
+        custom_data=['percent_change', "last_non_reg_price", "name"] # solely affects the hover text (tooltips)
+    )
+
+    # Adjust annotation position and style
+    fig.update_traces(
+        textposition='middle center',
+        hovertemplate='<b>%{label}</b><br>' +
+                    '%{customdata[2]}<br>'+
+                    #'Rolling % change: %{customdata[0]:.2f}%<br>' +
+                    'Last price: $%{customdata[1]:,.2f}<br>' + 
+                    '<extra></extra>'
+    )
+
+
+    # Modify the colorbar
+    fig.update_layout(
+        coloraxis_colorbar=dict(
+            title="Rolling % Change",
+            thicknessmode="pixels", thickness=20,
+            lenmode="fraction", len=0.33,
+            yanchor="bottom", y=-0.1,
+            xanchor="center", x=0.5,
+            orientation="h",
+            )#,
+        
+    )
+
+    return fig
+
+
+# Set the layout of the app
+app.layout = html.Div([
+    html.H1("Overnight Stock Market Heat Map", style={'textAlign': 'center'}),
+    dcc.Graph(id='heatmap-graph', style={'width': '100%', 'height': '90vh'}),
+    dcc.Interval(
+        id='interval-component',
+        interval=300*1000,  # in milliseconds, update every 5 minutes
+        n_intervals=0
+    )
+], style={'padding': '0 20px', 'max-width': '100vw', 'overflow': 'hidden'})
+
+
+# Define callback to update the graph
+@app.callback(Output('heatmap-graph', 'figure'),
+              Input('interval-component', 'n_intervals'))
+def update_graph(n_intervals):
     token = get_robinhood_bearer_token()
     
-    begin = time.time()
-
-
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
-    spx_symbols = spx_df['Symbol'].tolist()
+    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
+    spx_symbols = spx_df['symbol'].tolist()
     spx_results = asyncio.run(fetch_all_symbols(spx_symbols, token))
-    metrics_df = pd.DataFrame(spx_results, columns=["Instrument ID", "Market Cap", "Volume", "Average Volume", "Dollar Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price",
-                        "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
+    metrics_df = pd.DataFrame(spx_results, columns=["instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change", "last_trade_price", "last_non_reg_price",
+                                                    "extended_hours_price", "previous_close_price", "adjusted_previous_close_price", "overnight"])
     spx_total_df = pd.concat([spx_df, metrics_df], axis=1)
-    spx_total_df = spx_total_df[spx_total_df["Symbol"] != "GOOGL"] # Remove GOOGL from S&P 500 DataFrame
+    spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"] # Remove GOOGL from S&P 500 DataFrame
     
-    #time.sleep(3)
-    
-    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["Name", "Symbol", "Sector", "Subsector"])
-    nasdaq_symbols = nasdaq_df['Symbol'].tolist()
-    nasdaq_results = asyncio.run(fetch_all_symbols(nasdaq_symbols, token))
-    metrics_df = pd.DataFrame(nasdaq_results, columns=["Instrument ID", "Market Cap", "Volume", "Average Volume", "Dollar Change", "Percent Change", "Last Trade Price", "Last Non-Reg Price",
-                        "Extended Hours Price", "Previous Close Price", "Adjusted Previous Close Price", "Overnight"])
-    nasdaq_total_df = pd.concat([nasdaq_df, metrics_df], axis=1)
-    nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["Symbol"] != "GOOGL"] # Remove GOOGL from NASDAQ DataFrame
+    fig = create_heat_map(spx_total_df)
+    return fig
 
-    print("S&P 500 Data:")
-    print(spx_total_df.head())
-    print(spx_total_df.shape)
-    
-    print("\nNASDAQ Data:")
-    print(nasdaq_total_df.head())
-    print(nasdaq_total_df.shape)
-    
-    
-    end = time.time()
 
-    print(f"Time taken: {end - begin} seconds")
+if __name__ == "__main__":
+    
+    app.run(debug=True)
+    # begin = time.time()
+
+
+    # spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
+    # spx_symbols = spx_df['Symbol'].tolist()
+    # spx_results = asyncio.run(fetch_all_symbols(spx_symbols, token))
+    # metrics_df = pd.DataFrame(spx_results, columns=["instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change", "last_trade_price", "last_non_reg_price",
+    #                                                 "extended_hours_price", "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    # spx_total_df = pd.concat([spx_df, metrics_df], axis=1)
+    # spx_total_df = spx_total_df[spx_total_df["Symbol"] != "GOOGL"] # Remove GOOGL from S&P 500 DataFrame
+    
+    # #time.sleep(3)
+    
+    # nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
+    # nasdaq_symbols = nasdaq_df['Symbol'].tolist()
+    # nasdaq_results = asyncio.run(fetch_all_symbols(nasdaq_symbols, token))
+    # metrics_df = pd.DataFrame(nasdaq_results, columns=["instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change", "last_trade_price", "last_non_reg_price",
+    #                                                     "extended_hours_price", "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    # nasdaq_total_df = pd.concat([nasdaq_df, metrics_df], axis=1)
+    # nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"] # Remove GOOGL from NASDAQ DataFrame
+    
+    
+    # #pd.set_option('display.max_columns', None)
+    # #pd.set_option('display.width', None)  
+
+    
+    # print("S&P 500 Data:")
+    # print(spx_total_df.head())
+    # print(spx_total_df.shape)
+    
+    # print("\nNASDAQ Data:")
+    # print(nasdaq_total_df.head())
+    # print(nasdaq_total_df.shape)
+    
+    # end = time.time()
+
+    # print(f"Time taken: {end - begin} seconds")
+
+
