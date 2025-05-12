@@ -252,11 +252,6 @@ def create_heat_map(dataframe):
     print(f"Overnight on: {overnight_on}, Overnight off: {overnight_off}")
 
     total_title = "S&P 500 Map - Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols"
-    title_str = (
-        f"{{'text': {repr(total_title)}, "
-        f"'font': {{'size': 20, 'color': 'white'}}, "
-        f"'xanchor': 'center', 'x': 0.5}}"
-     )
     
     # Create Plotly treemap
     fig = px.treemap(
@@ -266,29 +261,89 @@ def create_heat_map(dataframe):
         color='percent_change',
         color_continuous_scale=color_scale, 
         range_color=(-3.1, 3.1),
-        title=title_str,
-        custom_data=['name', 'last_trade_price', 'overnight', "volume", "average_volume"],
+        title=total_title,
+        custom_data=['name', 'last_non_reg_price', 'overnight', "volume", "average_volume"],
         )
     
-    # tree_data = fig.data[0] 
+    #tree_data = fig.data[0] 
     # hierarchical_market_caps = tree_data['values'] # this is to get Plotly's automatically calculated hierarchical market cap values (the sum of all children)
     # print(hierarchical_market_caps)
+    data = fig.data[0].customdata
+    # Function to format each row based on the count of '(?)'
+    def format_row(row):
+        # Count how many instances of '(?)' there are
+        question_marks_count = np.count_nonzero(row == '(?)')
 
+        # If there are no '(?)' in the row, format as a detailed string
+        if question_marks_count == 0:
+            name, last_price, overnight_trading, volume, avg_volume, percent_change = row
+            formatted_last_price = round(float(last_price), 3)
+            formatted_volume = round(float(volume)/ 1000000, 2) 
+            formatted_avg_volume = round(float(avg_volume)/ 1000000, 2) 
+            formatted_volume = f"{formatted_volume}M" if formatted_volume >= 1 else f"{formatted_volume * 1000}K"
+            formatted_avg_volume = f"{formatted_avg_volume}M" if formatted_avg_volume >= 1 else f"{formatted_avg_volume * 1000}K"
+            formatted_percent_change = round(float(percent_change), 3)
+            return [
+                f"Name: {name}",
+                f"Last Price: ${formatted_last_price}",
+                f"Overnight Trading Enabled: {overnight_trading}",
+                f"Volume: {formatted_volume}",
+                f"Average Volume: {formatted_avg_volume}",
+                f"Percent Change: {formatted_percent_change}%"
+            ]
+        
+        # If there are 4 instances of '(?)', format with placeholders and 'Overnight Trading Enabled' and 'Percent Change'
+        elif question_marks_count == 4:
+            _, _, overnight_trading, _, _, percent_change = row
+            formatted_percent_change = round(float(percent_change), 3)
+            return [
+                " ",
+                " ",
+                " ",
+                " ",
+                f"Overnight Trading Enabled: {overnight_trading}",
+                f"Percent Change of Subsector: {formatted_percent_change}%"
+            ]
+        
+        # If there are 5 instances of '(?)', format with placeholders and just 'Percent Change'
+        elif question_marks_count == 5:
+            _, _, _, _, _, percent_change = row
+            formatted_percent_change = round(float(percent_change), 3)
+            
+            return [
+                " ",
+                " ",
+                " ",
+                " ",
+                " ",
+                f"Percent Change of Sector: {formatted_percent_change}%"
+            ]
+
+        # If other cases occur, return the row as-is
+        return row
+    
+    fig.data[0].customdata = np.array([format_row(row) for row in data])
+
+    for data_row in fig.data[0].customdata:
+        print(data_row)
+        print()
+        
     fig.update_traces(
         hovertemplate=
-            '%{label}<br>' +
-            #'Market Capitalization: $%{value:.2f}B<br>' +
-            'Parent Category: %{parent}<br>' +
-            #'ID: %{id}<br>' +
-            'Percent of S&P 500: %{percentRoot:.2%}<br>' +
-            'Percent of Parent Category: %{percentParent:.2%}<extra></extra>' +
-            'Name: %{customdata[0]}<br>' +
-            'Last Trade Price: $%{customdata[1]:.2f}<br>' +
-            'Overnight Trading: %{customdata[2]}<br>' +
-            'Volume: %{customdata[3]}<br>' +
-            'Average Volume: %{customdata[4]}<br>' +
-            'Market Cap: $%{value:.2f}B<extra></extra>'
+            '<span style="color:white;">%{label}</span><br><br>' +
+            '<span style="color:white;">Market Cap: $%{value}</span><br>' +
+            '<span style="color:white;">Parent Category: %{parent}</span><br>' +
+            '<span style="color:white;">Percentage of S&P 500: %{percentRoot:.2%}</span><br>' +
+            '<span style="color:white;">Percentage of Parent Category: %{percentParent:.2%}</span><br><br>' +
+            '<span style="color:white;">%{customdata[0]}</span><br>' +
+            '<span style="color:white;">%{customdata[1]}</span><br>' +
+            '<span style="color:white;">%{customdata[2]}</span><br>' +
+            '<span style="color:white;">%{customdata[3]}</span><br>' +
+            '<span style="color:white;">%{customdata[4]}</span><br>' +
+            '<span style="color:white;">%{customdata[5]}</span><br>' +
+            '<extra></extra>'
     )
+
 
     fig.update_layout(
         paper_bgcolor='gray',
@@ -313,7 +368,7 @@ def create_heat_map(dataframe):
         pathbar_visible=False
     )
 
-    fig.data[0]['textfont']['color'] = "white"
+    fig.data[0]['textfont']['color'] = "white" # Make font for everything (except hovertext) white
 
     return fig
 
