@@ -344,6 +344,14 @@ def create_heat_map(dataframe):
             '<extra></extra>'
     )
 
+    fig.update_layout(
+    hoverlabel=dict(
+        bgcolor='rgb(70, 70, 70)',     # background color
+        font_size=13,
+        font_color="white",  # text color
+        bordercolor="black"  # optional, default is automatic
+    )
+    )
 
     fig.update_layout(
         paper_bgcolor='gray',
