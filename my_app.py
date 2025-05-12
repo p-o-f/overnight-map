@@ -246,43 +246,48 @@ def create_heat_map(dataframe):
         axis=1
     )
 
-    # Build hovertext conditionally — if any value is missing, set hovertext to None
-    def safe_hover(row):
-        if pd.notna(row['percent_change']) and pd.notna(row['last_non_reg_price']) and pd.notna(row['name']):
-            return (
-                f"<b>{row['symbol']}</b><br>"
-                f"{row['name']}<br>"
-                f"Last price: ${float(row['last_non_reg_price']):,.2f}<br>"
-            )
-        else:
-            return None
-
-    dataframe['hovertext'] = dataframe.apply(safe_hover, axis=1)
 
     overnight_on = dataframe['overnight'].value_counts().iloc[0]
     overnight_off = dataframe['overnight'].value_counts().iloc[1]
     print(f"Overnight on: {overnight_on}, Overnight off: {overnight_off}")
 
-    root_title = "S&P 500 Map - Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols"
-
+    total_title = "S&P 500 Map - Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols"
+    title_str = (
+        f"{{'text': {repr(total_title)}, "
+        f"'font': {{'size': 20, 'color': 'white'}}, "
+        f"'xanchor': 'center', 'x': 0.5}}"
+     )
+    
     # Create Plotly treemap
     fig = px.treemap(
         dataframe,
-        path=[px.Constant(root_title), 'sector', 'subsector', 'symbol_with_change'], 
+        path=[px.Constant("S&P 500 Map"), 'sector', 'subsector', 'symbol_with_change'], 
         values='transformed_market_cap',
         color='percent_change',
         color_continuous_scale=color_scale, 
         range_color=(-3.1, 3.1),
-        hover_data=['hovertext'],
+        title=title_str,
+        custom_data=['name', 'last_trade_price', 'overnight', "volume", "average_volume"],
         )
+    
+    # tree_data = fig.data[0] 
+    # hierarchical_market_caps = tree_data['values'] # this is to get Plotly's automatically calculated hierarchical market cap values (the sum of all children)
+    # print(hierarchical_market_caps)
 
-    #  Styling behavior
     fig.update_traces(
-        textposition='middle center',
-        marker_line_width=0.0,
-        marker_line_color=black,
-        marker=dict(cornerradius=5),
-        pathbar_visible=False
+        hovertemplate=
+            '%{label}<br>' +
+            #'Market Capitalization: $%{value:.2f}B<br>' +
+            'Parent Category: %{parent}<br>' +
+            #'ID: %{id}<br>' +
+            'Percent of S&P 500: %{percentRoot:.2%}<br>' +
+            'Percent of Parent Category: %{percentParent:.2%}<extra></extra>' +
+            'Name: %{customdata[0]}<br>' +
+            'Last Trade Price: $%{customdata[1]:.2f}<br>' +
+            'Overnight Trading: %{customdata[2]}<br>' +
+            'Volume: %{customdata[3]}<br>' +
+            'Average Volume: %{customdata[4]}<br>' +
+            'Market Cap: $%{value:.2f}B<extra></extra>'
     )
 
     fig.update_layout(
@@ -297,6 +302,15 @@ def create_heat_map(dataframe):
             orientation="h",
             title_font=dict(size=12, color="white"),
         )
+    )
+    
+    #  Styling behavior
+    fig.update_traces(
+        textposition='middle center',
+        marker_line_width=0.0,
+        marker_line_color=black,
+        marker=dict(cornerradius=5),
+        pathbar_visible=False
     )
 
     fig.data[0]['textfont']['color'] = "white"
