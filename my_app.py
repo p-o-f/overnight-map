@@ -237,42 +237,56 @@ def create_heat_map(dataframe):
     ]
 
     # Apply a power transformation to the market cap values
-    power = 0.6  # Adjust this value to control the transformation strength
+    power = 0.6
     dataframe['transformed_market_cap'] = np.power(dataframe['market_cap'], power)
 
-    # Create a new column that combines the name with the percentage change and create symbol_with_change column with HTML formatting
+    # Create formatted label with percent change
     dataframe['symbol_with_change'] = dataframe.apply(
         lambda row: f"<span style='font-size: larger; color: white;'>{row['symbol']}</span><br><span style='color: white;'>{row['percent_change']:+.2f}%</span>",
         axis=1
     )
 
+    # Build hovertext conditionally — if any value is missing, set hovertext to None
+    def safe_hover(row):
+        if pd.notna(row['percent_change']) and pd.notna(row['last_non_reg_price']) and pd.notna(row['name']):
+            return (
+                f"<b>{row['symbol']}</b><br>"
+                f"{row['name']}<br>"
+                f"Last price: ${float(row['last_non_reg_price']):,.2f}<br>"
+            )
+        else:
+            return None
+
+    dataframe['hovertext'] = dataframe.apply(safe_hover, axis=1)
+
+    overnight_on = dataframe['overnight'].value_counts().iloc[0]
+    overnight_off = dataframe['overnight'].value_counts().iloc[1]
+    print(f"Overnight on: {overnight_on}, Overnight off: {overnight_off}")
+
+    root_title = "S&P 500 Map - Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols"
+
     # Create Plotly treemap
     fig = px.treemap(
         dataframe,
-        path=[px.Constant(" "), 'sector', 'subsector', 'symbol_with_change'], 
+        path=[px.Constant(root_title), 'sector', 'subsector', 'symbol_with_change'], 
         values='transformed_market_cap',
         color='percent_change',
         color_continuous_scale=color_scale, 
-        range_color=(-3.1,3.1),
-        custom_data=['percent_change', "last_non_reg_price", "name"] # solely affects the hover text (tooltips)
-    )
-    # Adjust annotation position and style
+        range_color=(-3.1, 3.1),
+        hover_data=['hovertext'],
+        )
+
+    #  Styling behavior
     fig.update_traces(
         textposition='middle center',
-        hovertemplate='<b>%{label}</b><br>' +
-                    '%{customdata[2]}<br>'+
-                    #'Rolling % change: %{customdata[0]:.2f}%<br>' +
-                    'Last price: $%{customdata[1]:,.2f}<br>' + 
-                    '<extra></extra>'
+        marker_line_width=0.0,
+        marker_line_color=black,
+        marker=dict(cornerradius=5),
+        pathbar_visible=False
     )
-    fig.update_traces(marker_line_width = 0.0, marker_line_color=black)
-    fig.update_traces(marker=dict(cornerradius=5))
-    fig.update_traces(pathbar_visible=False)
-    #fig.update_traces(tiling=dict(pad=0, packing='binary'))
 
-    # Modify the colorbar
     fig.update_layout(
-        paper_bgcolor='gray',  # or any desired background color
+        paper_bgcolor='gray',
         plot_bgcolor='white',
         coloraxis_colorbar=dict(
             title="Rolling % Change",
@@ -281,11 +295,14 @@ def create_heat_map(dataframe):
             yanchor="bottom", y=-0.1,
             xanchor="center", x=0.5,
             orientation="h",
-            )#,
-        
+            title_font=dict(size=12, color="white"),
+        )
     )
 
+    fig.data[0]['textfont']['color'] = "white"
+
     return fig
+
 
 
 # Set the layout of the app
@@ -321,18 +338,6 @@ def update_graph(n_intervals):
 if __name__ == "__main__":
     
     app.run(debug=True)
-    # begin = time.time()
-
-
-    # spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
-    # spx_symbols = spx_df['Symbol'].tolist()
-    # spx_results = asyncio.run(fetch_all_symbols(spx_symbols, token))
-    # metrics_df = pd.DataFrame(spx_results, columns=["instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change", "last_trade_price", "last_non_reg_price",
-    #                                                 "extended_hours_price", "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    # spx_total_df = pd.concat([spx_df, metrics_df], axis=1)
-    # spx_total_df = spx_total_df[spx_total_df["Symbol"] != "GOOGL"] # Remove GOOGL from S&P 500 DataFrame
-    
-    # #time.sleep(3)
     
     # nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
     # nasdaq_symbols = nasdaq_df['Symbol'].tolist()
@@ -346,16 +351,4 @@ if __name__ == "__main__":
     # #pd.set_option('display.max_columns', None)
     # #pd.set_option('display.width', None)  
 
-    
-    # print("S&P 500 Data:")
-    # print(spx_total_df.head())
-    # print(spx_total_df.shape)
-    
-    # print("\nNASDAQ Data:")
-    # print(nasdaq_total_df.head())
-    # print(nasdaq_total_df.shape)
-    
-    # end = time.time()
-
-    # print(f"Time taken: {end - begin} seconds")
 
