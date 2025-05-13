@@ -35,6 +35,11 @@ app = dash.Dash(__name__)
 server = app.server  # This is for Gunicorn to use
 
 
+# Global cache for Dash
+spx_fig = None
+nasdaq_fig = None
+
+
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
     response = requests.get(url)
@@ -222,7 +227,7 @@ async def fetch_all_symbols(symbols, token):
     return results
 
 
-def create_heat_map(dataframe):    
+def create_heat_map(dataframe, map_title):    
     palette = {
         -3: "#e74b3e", -2: "#b44b48", -1: "#84494e",
         0: "#414553", 1: "#457351", 2: "#509957", 3: "#63c667"
@@ -251,12 +256,12 @@ def create_heat_map(dataframe):
     overnight_off = dataframe['overnight'].value_counts().iloc[1]
     print(f"Overnight on: {overnight_on}, Overnight off: {overnight_off}")
 
-    total_title = "S&P 500 Map - Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols"
+    total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols"
     
     # Create Plotly treemap
     fig = px.treemap(
         dataframe,
-        path=[px.Constant("S&P 500 Map"), 'sector', 'subsector', 'symbol_with_change'], 
+        path=[px.Constant(map_title), 'sector', 'subsector', 'symbol_with_change'], 
         values='transformed_market_cap',
         color='percent_change',
         color_continuous_scale=color_scale, 
@@ -268,8 +273,10 @@ def create_heat_map(dataframe):
     #tree_data = fig.data[0] 
     # hierarchical_market_caps = tree_data['values'] # this is to get Plotly's automatically calculated hierarchical market cap values (the sum of all children)
     # print(hierarchical_market_caps)
+    
+    # Function to format each row based on the count of '(?)'; this is necessary because Plotly does not allow for custom hover text
+    # to be set for each individual node in a treemap
     data = fig.data[0].customdata
-    # Function to format each row based on the count of '(?)'
     def format_row(row):
         # Count how many instances of '(?)' there are
         question_marks_count = np.count_nonzero(row == '(?)')
@@ -324,14 +331,11 @@ def create_heat_map(dataframe):
     
     fig.data[0].customdata = np.array([format_row(row) for row in data])
 
-    for data_row in fig.data[0].customdata:
-        print(data_row)
-        print()
         
     fig.update_traces(
         hovertemplate=
             '<span style="color:white;">%{label}</span><br><br>' +
-            '<span style="color:white;">Market Cap: $%{value}</span><br>' +
+            '<span style="color:white;">Market Cap: $%{value}:s</span><br>' + # TODO fix this to be proper units
             '<span style="color:white;">Parent Category: %{parent}</span><br>' +
             '<span style="color:white;">Percentage of S&P 500: %{percentRoot:.2%}</span><br>' +
             '<span style="color:white;">Percentage of Parent Category: %{percentParent:.2%}</span><br><br>' +
@@ -381,51 +385,62 @@ def create_heat_map(dataframe):
     return fig
 
 
+def preload_figures():
+    global spx_fig, nasdaq_fig
+    token = get_robinhood_bearer_token()
+
+    # S&P 500
+    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
+    spx_results = asyncio.run(fetch_all_symbols(spx_df['symbol'].tolist(), token))
+    spx_metrics_df = pd.DataFrame(spx_results, columns=["instrument_id", "market_cap", "volume", "average_volume",
+                                                         "dollar_change", "percent_change", "last_trade_price",
+                                                         "last_non_reg_price", "extended_hours_price",
+                                                         "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
+    spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
+    spx_fig = create_heat_map(spx_total_df, "S&P 500 Map")
+
+    time.sleep(1)  # Small delay to avoid overwhelming the server
+    # NASDAQ
+    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
+    nasdaq_results = asyncio.run(fetch_all_symbols(nasdaq_df['symbol'].tolist(), token))
+    nasdaq_metrics_df = pd.DataFrame(nasdaq_results, columns=["instrument_id", "market_cap", "volume", "average_volume",
+                                                               "dollar_change", "percent_change", "last_trade_price",
+                                                               "last_non_reg_price", "extended_hours_price",
+                                                               "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
+    nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
+    nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100 Map")
+
 
 # Set the layout of the app
 app.layout = html.Div([
     html.H1("Overnight Stock Market Heat Map", style={'color': 'white'}),
+    dcc.Tabs(id="index-tabs", value='sp500', children=[
+        dcc.Tab(label='S&P 500', value='sp500'),
+        dcc.Tab(label='Nasdaq 100', value='nasdaq'),
+    ]),
     dcc.Graph(id='heatmap-graph'),
     dcc.Interval(
         id='interval-component',
-        interval=300*1000,  # 5 minutes
+        interval=300 * 1000,  # 5 minutes
         n_intervals=0
     )
-])
+], style={'backgroundColor': 'black', 'padding': '10px'})
 
 
 # Define callback to update the graph
-@app.callback(Output('heatmap-graph', 'figure'),
-              Input('interval-component', 'n_intervals'))
-def update_graph(n_intervals):
-    token = get_robinhood_bearer_token()
-    
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
-    spx_symbols = spx_df['symbol'].tolist()
-    spx_results = asyncio.run(fetch_all_symbols(spx_symbols, token))
-    metrics_df = pd.DataFrame(spx_results, columns=["instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change", "last_trade_price", "last_non_reg_price",
-                                                    "extended_hours_price", "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    spx_total_df = pd.concat([spx_df, metrics_df], axis=1)
-    spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"] # Remove GOOGL from S&P 500 DataFrame
-    
-    fig = create_heat_map(spx_total_df)
-    return fig
+@app.callback(
+    Output('heatmap-graph', 'figure'),
+    Input('index-tabs', 'value')
+)
+def update_graph(selected_index):
+    if selected_index == 'sp500':
+        return spx_fig
+    else:
+        return nasdaq_fig
 
 
 if __name__ == "__main__":
-    
+    preload_figures()
     app.run(debug=True)
-    
-    # nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
-    # nasdaq_symbols = nasdaq_df['Symbol'].tolist()
-    # nasdaq_results = asyncio.run(fetch_all_symbols(nasdaq_symbols, token))
-    # metrics_df = pd.DataFrame(nasdaq_results, columns=["instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change", "last_trade_price", "last_non_reg_price",
-    #                                                     "extended_hours_price", "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    # nasdaq_total_df = pd.concat([nasdaq_df, metrics_df], axis=1)
-    # nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"] # Remove GOOGL from NASDAQ DataFrame
-    
-    
-    # #pd.set_option('display.max_columns', None)
-    # #pd.set_option('display.width', None)  
-
-
