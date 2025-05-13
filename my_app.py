@@ -4,6 +4,8 @@ import pandas as pd
 import re
 import json
 import numpy as np
+from datetime import datetime
+import pytz
 
 # Selenium 
 from selenium import webdriver
@@ -213,14 +215,7 @@ async def fetch_symbol_metrics_limited(session, token, symbol):
 async def fetch_all_symbols(symbols, token):
     connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession(connector=connector) as session:
-        #---------------------------------------------------------------------------------- To use this without sempahore 
-        # tasks = []
-        # for symbol in symbols:
-        #     task = fetch_symbol_metrics(session, token, symbol)
-        #     tasks.append(task)
-        #     await asyncio.sleep(0.02)  # Small sleep between submissions (safe)
-        # results = await asyncio.gather(*tasks)
-        #----------------------------------------------------------------------------------
+        # Create a list of tasks for each symbol
         tasks = [fetch_symbol_metrics_limited(session, token, symbol) for symbol in symbols]
         results = await asyncio.gather(*tasks)
 
@@ -255,7 +250,15 @@ def create_heat_map(dataframe, map_title):
     overnight_off = dataframe['overnight'].value_counts().iloc[1]
     print(f"{map_title}\nOvernight on: {overnight_on}, Overnight off: {overnight_off}")
 
-    total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols"
+    # New York timezone
+    ny_tz = pytz.timezone("America/New_York")
+    # Current time in New York
+    ny_time = datetime.now(ny_tz)
+    # Format like "5/13/2025, 6:14 AM, EST"
+    formatted_time = ny_time.strftime("%#m/%#d/%Y, %#I:%M %p")
+    total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols" 
+    total_title += " " * 100 # add some whitespace
+    total_title += f"Last refreshed at: {formatted_time}" + " EST"
     
     # Create Plotly treemap
     fig = px.treemap(
@@ -268,13 +271,6 @@ def create_heat_map(dataframe, map_title):
         title=total_title,
         custom_data=['name', 'last_non_reg_price', 'overnight', "volume", "average_volume"],
         )
-    
-    # TODO fix this (mktcap) to be proper units
-    #tree_data = fig.data[0] 
-    # hierarchical_market_caps = tree_data['values'] # this is to get Plotly's automatically calculated hierarchical market cap values (the sum of all children)
-    # print(hierarchical_market_caps)
-    #fig.data[0]['values'] = fig.data[0]['values'] # convert to billions
-    
     
     # Function to format each row based on the count of '(?)'; this is necessary because Plotly does not allow for custom hover text
     # to be set for each individual node in a treemap
@@ -333,7 +329,7 @@ def create_heat_map(dataframe, map_title):
     
     fig.data[0].customdata = np.array([format_row(row) for row in hover_data])
 
-        
+    # Set hover text
     fig.update_traces(
         hovertemplate=
             '<span style="color:white;">%{label}</span><br><br>' +
@@ -450,7 +446,6 @@ def update_graph_or_refresh(selected_index, n):
         return spx_fig
     else:
         return nasdaq_fig
-
 
 
 if __name__ == "__main__":
