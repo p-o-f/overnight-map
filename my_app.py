@@ -19,6 +19,7 @@ import dash
 import pyotp
 from dash import dcc, html
 from dash.dependencies import Input, Output
+from dash import callback_context
 
 # Performance optimizations
 import functools
@@ -30,10 +31,9 @@ import random
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
 CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
 
-# Initialize the Dash app
+# Initialize Dash app
 app = dash.Dash(__name__)
 server = app.server  # This is for Gunicorn to use
-
 
 # Global cache for Dash
 spx_fig = None
@@ -251,10 +251,9 @@ def create_heat_map(dataframe, map_title):
         axis=1
     )
 
-
     overnight_on = dataframe['overnight'].value_counts().iloc[0]
     overnight_off = dataframe['overnight'].value_counts().iloc[1]
-    print(f"Overnight on: {overnight_on}, Overnight off: {overnight_off}")
+    print(f"{map_title}\nOvernight on: {overnight_on}, Overnight off: {overnight_off}")
 
     total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols"
     
@@ -270,6 +269,7 @@ def create_heat_map(dataframe, map_title):
         custom_data=['name', 'last_non_reg_price', 'overnight', "volume", "average_volume"],
         )
     
+    # TODO fix this (mktcap) to be proper units
     #tree_data = fig.data[0] 
     # hierarchical_market_caps = tree_data['values'] # this is to get Plotly's automatically calculated hierarchical market cap values (the sum of all children)
     # print(hierarchical_market_caps)
@@ -335,7 +335,7 @@ def create_heat_map(dataframe, map_title):
     fig.update_traces(
         hovertemplate=
             '<span style="color:white;">%{label}</span><br><br>' +
-            '<span style="color:white;">Market Cap: $%{value}:s</span><br>' + # TODO fix this to be proper units
+            '<span style="color:white;">Market Cap: $%{value}</span><br>' + # TODO fix this to be proper units
             '<span style="color:white;">Parent Category: %{parent}</span><br>' +
             '<span style="color:white;">Percentage of S&P 500: %{percentRoot:.2%}</span><br>' +
             '<span style="color:white;">Percentage of Parent Category: %{percentParent:.2%}</span><br><br>' +
@@ -385,9 +385,8 @@ def create_heat_map(dataframe, map_title):
     return fig
 
 
-def preload_figures():
+def preload_figures(token):
     global spx_fig, nasdaq_fig
-    token = get_robinhood_bearer_token()
 
     # S&P 500
     spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
@@ -398,9 +397,8 @@ def preload_figures():
                                                          "previous_close_price", "adjusted_previous_close_price", "overnight"])
     spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
     spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
-    spx_fig = create_heat_map(spx_total_df, "S&P 500 Map")
+    spx_fig = create_heat_map(spx_total_df, "S&P 500")
 
-    time.sleep(1)  # Small delay to avoid overwhelming the server
     # NASDAQ
     nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
     nasdaq_results = asyncio.run(fetch_all_symbols(nasdaq_df['symbol'].tolist(), token))
@@ -410,7 +408,7 @@ def preload_figures():
                                                                "previous_close_price", "adjusted_previous_close_price", "overnight"])
     nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
     nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
-    nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100 Map")
+    nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
 
 
 # Set the layout of the app
@@ -421,26 +419,39 @@ app.layout = html.Div([
         dcc.Tab(label='Nasdaq 100', value='nasdaq'),
     ]),
     dcc.Graph(id='heatmap-graph'),
-    dcc.Interval(
-        id='interval-component',
-        interval=300 * 1000,  # 5 minutes
-        n_intervals=0
-    )
+    dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
 ], style={'backgroundColor': 'black', 'padding': '10px'})
 
 
 # Define callback to update the graph
 @app.callback(
     Output('heatmap-graph', 'figure'),
-    Input('index-tabs', 'value')
+    Input('index-tabs', 'value'),
+    Input('refresh-interval', 'n_intervals')
 )
-def update_graph(selected_index):
+def update_graph_or_refresh(selected_index, n):
+    ctx = callback_context
+
+    if not ctx.triggered:
+        # Page just loaded
+        return spx_fig
+
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    if trigger_id == 'refresh-interval':
+        # Refresh both datasets in background
+        token = get_robinhood_bearer_token()
+        preload_figures(token)
+
+    # In all cases, return the correct tab figure
     if selected_index == 'sp500':
         return spx_fig
     else:
         return nasdaq_fig
 
 
+
 if __name__ == "__main__":
-    preload_figures()
+    token = get_robinhood_bearer_token()
+    preload_figures(token)  # preload both S&P 500 and Nasdaq heatmaps
     app.run(debug=True)
