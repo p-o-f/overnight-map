@@ -273,10 +273,12 @@ def create_heat_map(dataframe, map_title):
     #tree_data = fig.data[0] 
     # hierarchical_market_caps = tree_data['values'] # this is to get Plotly's automatically calculated hierarchical market cap values (the sum of all children)
     # print(hierarchical_market_caps)
+    #fig.data[0]['values'] = fig.data[0]['values'] # convert to billions
+    
     
     # Function to format each row based on the count of '(?)'; this is necessary because Plotly does not allow for custom hover text
     # to be set for each individual node in a treemap
-    data = fig.data[0].customdata
+    hover_data = fig.data[0].customdata
     def format_row(row):
         # Count how many instances of '(?)' there are
         question_marks_count = np.count_nonzero(row == '(?)')
@@ -329,13 +331,13 @@ def create_heat_map(dataframe, map_title):
         # If other cases occur, return the row as-is
         return row
     
-    fig.data[0].customdata = np.array([format_row(row) for row in data])
+    fig.data[0].customdata = np.array([format_row(row) for row in hover_data])
 
         
     fig.update_traces(
         hovertemplate=
             '<span style="color:white;">%{label}</span><br><br>' +
-            '<span style="color:white;">Market Cap: $%{value}</span><br>' + # TODO fix this to be proper units
+            #'<span style="color:white;">Market Cap: $%{value}</span><br>' + # TODO fix this to be proper units
             '<span style="color:white;">Parent Category: %{parent}</span><br>' +
             '<span style="color:white;">Percentage of S&P 500: %{percentRoot:.2%}</span><br>' +
             '<span style="color:white;">Percentage of Parent Category: %{percentParent:.2%}</span><br><br>' +
