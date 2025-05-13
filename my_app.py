@@ -257,7 +257,7 @@ def create_heat_map(dataframe, map_title):
     # Format like "5/13/2025, 6:14 AM, EST"
     formatted_time = ny_time.strftime("%#m/%#d/%Y, %#I:%M %p")
     total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols" 
-    total_title += " " * 100 # add some whitespace
+    total_title += " " * 125 # add some whitespace
     total_title += f"Last refreshed at: {formatted_time}" + " EST"
     
     # Create Plotly treemap
@@ -268,7 +268,6 @@ def create_heat_map(dataframe, map_title):
         color='percent_change',
         color_continuous_scale=color_scale, 
         range_color=(-3.1, 3.1),
-        title=total_title,
         custom_data=['name', 'last_non_reg_price', 'overnight', "volume", "average_volume"],
         )
     
@@ -366,6 +365,14 @@ def create_heat_map(dataframe, map_title):
             xanchor="center", x=0.5,
             orientation="h",
             title_font=dict(size=12, color="white"),
+            tickfont=dict(size=10, color="white"),
+        ),
+        title=dict(
+            text=total_title,  # Custom title text
+            font=dict(
+                size=20,
+                color='white'  # Custom font color
+            )
         )
     )
     
