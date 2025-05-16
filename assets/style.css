@@ -28,7 +28,7 @@ h1 {
 /* Optional: tweak the graph container */
 #heatmap-graph {
     width: 100vw !important;
-    height: calc(100vh - 60px) !important; /* adjust based on H1 height */
+    height: 90vh !important; /* adjust based on H1 height */
     padding: 0;
     margin: 0;
     display: block;

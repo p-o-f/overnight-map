@@ -257,7 +257,7 @@ def create_heat_map(dataframe, map_title):
     # Format like "5/13/2025, 6:14 AM, EST"
     formatted_time = ny_time.strftime("%#m/%#d/%Y, %#I:%M %p")
     total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols" 
-    total_title += " " * 125 # add some whitespace
+    total_title += " " * 160 # add some whitespace
     total_title += f"Last refreshed at: {formatted_time}" + " EST"
     
     # Create Plotly treemap
@@ -361,7 +361,7 @@ def create_heat_map(dataframe, map_title):
             title="Rolling % Change",
             thicknessmode="pixels", thickness=20,
             lenmode="fraction", len=0.33,
-            yanchor="bottom", y=-0.1,
+            yanchor="bottom", y=-0.075,
             xanchor="center", x=0.5,
             orientation="h",
             title_font=dict(size=12, color="white"),
@@ -370,7 +370,7 @@ def create_heat_map(dataframe, map_title):
         title=dict(
             text=total_title,  # Custom title text
             font=dict(
-                size=20,
+                size=18,
                 color='white'  # Custom font color
             )
         )
@@ -421,7 +421,7 @@ app.layout = html.Div([
     html.H1("Overnight Stock Market Heat Map", style={'color': 'white'}),
     dcc.Tabs(id="index-tabs", value='sp500', children=[
         dcc.Tab(label='S&P 500', value='sp500'),
-        dcc.Tab(label='Nasdaq 100', value='nasdaq'),
+        dcc.Tab(label='NASDAQ 100', value='nasdaq'),
     ]),
     dcc.Graph(id='heatmap-graph'),
     dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
