@@ -334,7 +334,7 @@ def create_heat_map(dataframe, map_title):
             '<span style="color:white;">%{label}</span><br><br>' +
             #'<span style="color:white;">Market Cap: $%{value}</span><br>' + # TODO fix this to be proper units
             '<span style="color:white;">Parent Category: %{parent}</span><br>' +
-            '<span style="color:white;">Percentage of S&P 500: %{percentRoot:.2%}</span><br>' +
+            '<span style="color:white;">Percentage of Index: %{percentRoot:.2%}</span><br>' +
             '<span style="color:white;">Percentage of Parent Category: %{percentParent:.2%}</span><br><br>' +
             '<span style="color:white;">%{customdata[0]}</span><br>' +
             '<span style="color:white;">%{customdata[1]}</span><br>' +
