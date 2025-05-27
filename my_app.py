@@ -61,43 +61,35 @@ def get_nasdaq_index_info():
 
 
 def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
+    # Set up Chrome options for headless browsing
+    chrome_options = Options()
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=640,360")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    # Speed optimizations
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-default-apps")
+    chrome_options.add_argument("--disable-popup-blocking")
+    chrome_options.add_argument("--blink-settings=imagesEnabled=false")  # Disable images
+    chrome_options.add_argument("--disable-notifications")
+    chrome_options.add_argument("--disable-infobars")
+    
+    # Add user agent to mimic a real browser
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
+    
+    # Enable logging for network requests
+    chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+    
+    # Set page load strategy to 'eager' to proceed as soon as the DOM is ready
+    chrome_options.page_load_strategy = 'eager'
+    
+    print("Starting Chrome in headless mode...")
     if RUNNING_LOCALLY:
-        # Set up Chrome options for headless browsing
-        chrome_options = Options()
-        chrome_options.add_argument("--headless=new")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=640,360")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        
-        # Speed optimizations
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-default-apps")
-        chrome_options.add_argument("--disable-popup-blocking")
-        chrome_options.add_argument("--blink-settings=imagesEnabled=false")  # Disable images
-        chrome_options.add_argument("--disable-notifications")
-        chrome_options.add_argument("--disable-infobars")
-        
-        # Add user agent to mimic a real browser
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
-        
-        # Enable logging for network requests
-        chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-        
-        # Set page load strategy to 'eager' to proceed as soon as the DOM is ready
-        chrome_options.page_load_strategy = 'eager'
-        
-        print("Starting Chrome in headless mode...")
         driver = webdriver.Chrome(options=chrome_options)
         
     else: # for deployment on Render.com
-        chrome_options = Options()
-        chrome_options.add_argument("--headless=new")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--window-size=640,360")
-        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-
         # Explicit Chrome binary path (installed by render-build.sh)
         chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
         
