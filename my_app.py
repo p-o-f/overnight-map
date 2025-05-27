@@ -16,16 +16,13 @@ from webdriver_manager.chrome import ChromeDriverManager  # auto-manage ChromeDr
 import plotly.graph_objects as go
 import plotly.express as px
 import dash
-import pyotp
 from dash import dcc, html
 from dash.dependencies import Input, Output
 from dash import callback_context
 
 # Performance optimizations
-import functools
 import asyncio
 import aiohttp
-import random
 
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
