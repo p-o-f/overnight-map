@@ -10,6 +10,7 @@ import pytz
 # Selenium 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager  # auto-manage ChromeDriver
 
 # Plotly 
@@ -94,7 +95,8 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
         chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
         
         print("Starting Chrome in headless mode...")
-        driver = webdriver.Chrome(executable_path=ChromeDriverManager().install(), options=chrome_options)
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
 
     try:
         # Navigate to any specific stock page
