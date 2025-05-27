@@ -136,7 +136,10 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
                         bearer_token = auth_header.replace('Bearer ', '')
                         print("Bearer token found!")
                         break
-        
+        if not bearer_token:
+            print("⚠️ Failed to extract bearer token from Chrome logs")
+            return None
+
         return bearer_token
         
     finally:
@@ -406,7 +409,12 @@ def create_heat_map(dataframe, map_title):
 
 def preload_figures(token):
     global spx_fig, nasdaq_fig
-
+    #Debug
+    if not token:
+        print("❌ Bearer token was None — likely token fetch failure.")
+    else:
+        print("✅ Bearer token successfully retrieved")
+        
     # S&P 500
     spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
     spx_results = asyncio.run(fetch_all_symbols(spx_df['symbol'].tolist(), token))
