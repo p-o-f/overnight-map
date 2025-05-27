@@ -29,7 +29,7 @@ import random
 
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
-CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
+CONCURRENT_REQUESTS = 5  # Can be tuned higher/lower based on network stability
 
 # Initialize Dash app
 app = dash.Dash(__name__)
