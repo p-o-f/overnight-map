@@ -10,9 +10,7 @@ import pytz
 # Selenium 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager  # auto-manage ChromeDriver
 
 # Plotly 
 import plotly.graph_objects as go
@@ -41,6 +39,7 @@ server = app.server  # This is for Gunicorn to use
 spx_fig = None
 nasdaq_fig = None
 
+RUNNING_LOCALLY = True  # Set to False if running on a server
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -63,32 +62,47 @@ def get_nasdaq_index_info():
 
 
 def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
-    # Set up Chrome options for headless browsing
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=640,360")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    
-    # Speed optimizations
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-default-apps")
-    chrome_options.add_argument("--disable-popup-blocking")
-    chrome_options.add_argument("--blink-settings=imagesEnabled=false")  # Disable images
-    chrome_options.add_argument("--disable-notifications")
-    chrome_options.add_argument("--disable-infobars")
-    
-    # Add user agent to mimic a real browser
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
-    
-    # Enable logging for network requests
-    chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-    
-    # Set page load strategy to 'eager' to proceed as soon as the DOM is ready
-    chrome_options.page_load_strategy = 'eager'
-    
-    print("Starting Chrome in headless mode...")
-    driver = webdriver.Chrome(options=chrome_options)
+    if RUNNING_LOCALLY:
+        # Set up Chrome options for headless browsing
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=640,360")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        
+        # Speed optimizations
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-popup-blocking")
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false")  # Disable images
+        chrome_options.add_argument("--disable-notifications")
+        chrome_options.add_argument("--disable-infobars")
+        
+        # Add user agent to mimic a real browser
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
+        
+        # Enable logging for network requests
+        chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+        
+        # Set page load strategy to 'eager' to proceed as soon as the DOM is ready
+        chrome_options.page_load_strategy = 'eager'
+        
+        print("Starting Chrome in headless mode...")
+        driver = webdriver.Chrome(options=chrome_options)
+        
+    else: # for deployment on Render.com
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--window-size=640,360")
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+
+        # Explicit Chrome binary path (installed by render-build.sh)
+        chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
+
+        driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
     
     try:
         # Navigate to any specific stock page
@@ -255,10 +269,10 @@ def create_heat_map(dataframe, map_title):
     # Current time in New York
     ny_time = datetime.now(ny_tz)
     # Format like "5/13/2025, 6:14 AM, EST"
-    formatted_time = ny_time.strftime("%#m/%#d/%Y, %#I:%M %p")
+    formatted_time = ny_time.strftime("%m/%d/%Y, %I:%M %p, %Z").lstrip("0").replace(" 0", " ") # For cross-platform zero-stripping
     total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols" 
     total_title += " " * 160 # add some whitespace
-    total_title += f"Last refreshed at: {formatted_time}" + " EST"
+    total_title += f"Last refreshed at: {formatted_time}"
     
     # Create Plotly treemap
     fig = px.treemap(

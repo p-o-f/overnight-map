@@ -1,0 +1,10 @@
+dash>=2.14.0
+plotly>=5.17.0
+pandas>=2.1.0
+numpy>=1.26.0
+pytz>=2023.3
+aiohttp>=3.9.0
+requests>=2.31.0
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+gunicorn>=21.2.0
