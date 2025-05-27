@@ -94,8 +94,8 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
         chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
         
         print("Starting Chrome in headless mode...")
-        driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
-    
+        driver = webdriver.Chrome(executable_path=ChromeDriverManager().install(), options=chrome_options)
+
     try:
         # Navigate to any specific stock page
         print("Navigating to S&P 500 ETF page...")
