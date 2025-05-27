@@ -38,7 +38,7 @@ server = app.server  # This is for Gunicorn to use
 spx_fig = None
 nasdaq_fig = None
 
-RUNNING_LOCALLY = True  # Set to False if running on a server
+RUNNING_LOCALLY = False  # Set to False if running on a server
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
