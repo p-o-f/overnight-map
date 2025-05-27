@@ -21,8 +21,10 @@ from dash.dependencies import Input, Output
 from dash import callback_context
 
 # Performance optimizations
+import functools
 import asyncio
 import aiohttp
+import random
 
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
@@ -98,7 +100,8 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
 
         # Explicit Chrome binary path (installed by render-build.sh)
         chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
-
+        
+        print("Starting Chrome in headless mode...")
         driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
     
     try:
