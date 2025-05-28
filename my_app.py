@@ -261,7 +261,12 @@ def create_heat_map(dataframe, map_title):
     )
 
     overnight_on = dataframe['overnight'].value_counts().iloc[0]
-    overnight_off = dataframe['overnight'].value_counts().iloc[1]
+    try:
+        # If there is no overnight trading data, this will raise an IndexError
+        overnight_off = dataframe['overnight'].value_counts().iloc[1]
+    except IndexError:
+        # If there is no overnight trading data, set overnight_off to 0
+        overnight_off = 0
     print(f"{map_title}\nOvernight on: {overnight_on}, Overnight off: {overnight_off}")
 
     # New York timezone
