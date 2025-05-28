@@ -361,7 +361,7 @@ def create_heat_map(dataframe, map_title):
 
     fig.update_layout(
     hoverlabel=dict(
-        bgcolor='rgb(70, 70, 70)',     # background color
+        bgcolor='rgb(66, 73, 75)',     # background color
         font_size=13,
         font_color="white",  # text color
         bordercolor="black"  # optional, default is automatic
@@ -493,7 +493,7 @@ app.layout = html.Div([
     ]),
     html.Div(id='content-container'),
     dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
-], style={'backgroundColor': 'black', 'padding': '10px'})
+], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
 
 
 # Define callback to update the graph
