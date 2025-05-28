@@ -2,7 +2,7 @@
 html, body {
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow: yscroll;
     height: 100%;
     width: 100%;
     background-color: rgb(79, 79, 79);
@@ -25,11 +25,22 @@ h1 {
     background-color: "blue";
 }
 
-/* Optional: tweak the graph container */
+/* Tweak the graph container */
 #heatmap-graph {
     width: 100vw !important;
     height: 90vh !important; /* adjust based on H1 height */
     padding: 0;
     margin: 0;
     display: block;
+}
+
+/* For List View tab */
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+th, td {
+    border: 1px solid white;
+    padding: 8px;
+    text-align: left;
 }

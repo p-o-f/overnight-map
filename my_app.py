@@ -20,6 +20,7 @@ import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
 from dash import callback_context
+from dash import dash_table
 
 # Performance optimizations
 import functools
@@ -29,7 +30,7 @@ import random
 
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
-CONCURRENT_REQUESTS = 5  # Can be tuned higher/lower based on network stability
+CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
 
 # Initialize Dash app
 app = dash.Dash(__name__)
@@ -38,8 +39,10 @@ server = app.server  # This is for Gunicorn to use
 # Global cache for Dash
 spx_fig = None
 nasdaq_fig = None
+spx_total_df = None
+nasdaq_total_df = None
 
-RUNNING_LOCALLY = False  # Set to False if running on a server
+RUNNING_LOCALLY = True  # Set to False if running on a server
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -403,6 +406,8 @@ def create_heat_map(dataframe, map_title):
 
 def preload_figures(token):
     global spx_fig, nasdaq_fig
+    global spx_total_df, nasdaq_total_df
+
     #Debug
     if not token:
         print("❌ Bearer token was None — likely token fetch failure.")
@@ -432,43 +437,104 @@ def preload_figures(token):
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
 
 
+def generate_table(df, title, max_rows=30):
+    df_sorted = df.sort_values(by="percent_change", ascending=False)
+
+    # Columns to display and their headers
+    columns = ['symbol', 'name', 'sector', 'percent_change', 'market_cap', 'volume', 'average_volume', 'last_trade_price']
+    pretty_names = ['Symbol', 'Name', 'Sector', '% Change', 'Market Cap', 'Volume', 'Avg Volume', 'Last Price']
+
+    def format_large_number(value):
+        try:
+            value = float(value)
+            if value >= 1_000_000_000_000:
+                return f"{value / 1_000_000_000_000:.2f}T"
+            if value >= 1_000_000_000:
+                return f"{value / 1_000_000_000:.2f}B"
+            elif value >= 1_000_000:
+                return f"{value / 1_000_000:.2f}M"
+            elif value >= 1_000:
+                return f"{value / 1_000:.2f}K"
+            else:
+                return f"{value:.2f}"
+        except:
+            return value
+
+    #TODO can make this sortable by column later (optionally); also need to fix margins and aesthetic stuff
+    return html.Div([
+        html.H3(f"{title} - Top {max_rows} by % Change", style={'color': 'white', 'marginTop': '20px'}),
+        html.Table([
+            html.Thead(
+                html.Tr([html.Th(col, style={'color': 'white', 'border': '1px solid white'}) for col in pretty_names])
+            ),
+            html.Tbody([
+                html.Tr([
+                    html.Td(
+                        format_large_number(df_sorted.iloc[i][col]) if col in ['market_cap', 'volume', 'average_volume', 'last_trade_price']
+                        else f"{df_sorted.iloc[i][col]:+.2f}%" if col == 'percent_change'
+                        else df_sorted.iloc[i][col],
+                        style={'border': '1px solid white'}
+                    )
+                    for col in columns
+                ]) for i in range(min(len(df_sorted), max_rows))
+            ])
+        ], style={'color': 'white', 'width': '100%', 'borderCollapse': 'collapse', 'marginBottom': '40px'})
+    ])
+
+
 # Set the layout of the app
 app.layout = html.Div([
     html.H1("Overnight Stock Market Heat Map", style={'color': 'white'}),
     dcc.Tabs(id="index-tabs", value='sp500', children=[
         dcc.Tab(label='S&P 500', value='sp500'),
         dcc.Tab(label='NASDAQ 100', value='nasdaq'),
+        dcc.Tab(label='List View S&P 500', value='listview_spx'),
+        dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
     ]),
-    dcc.Graph(id='heatmap-graph'),
+    html.Div(id='content-container'),
     dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
 ], style={'backgroundColor': 'black', 'padding': '10px'})
 
 
 # Define callback to update the graph
 @app.callback(
-    Output('heatmap-graph', 'figure'),
+    Output('content-container', 'children'),
     Input('index-tabs', 'value'),
     Input('refresh-interval', 'n_intervals')
 )
-def update_graph_or_refresh(selected_index, n):
+def update_content(selected_index, n):
     ctx = callback_context
 
-    if not ctx.triggered:
-        # Page just loaded
-        return spx_fig
-
-    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    if trigger_id == 'refresh-interval':
-        # Refresh both datasets in background
+    if ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval':
         token = get_robinhood_bearer_token()
         preload_figures(token)
 
-    # In all cases, return the correct tab figure
     if selected_index == 'sp500':
-        return spx_fig
-    else:
-        return nasdaq_fig
+        return html.Div([
+            dcc.Graph(figure=spx_fig, id='heatmap-graph'),
+            html.P(
+                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
+                style={'color': 'white', 'marginTop': '20px'}
+            )
+        ])
+    elif selected_index == 'nasdaq':
+        return html.Div([
+            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
+            html.P(
+                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
+                style={'color': 'white', 'marginTop': '20px'}
+            )
+        ])
+    elif selected_index == 'listview_spx':
+        return html.Div([
+            generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0),
+            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}), # caption at bottom of page
+        ])
+    elif selected_index == 'listview_nasdaq':
+        return html.Div([
+            generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0),
+            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}), # caption at bottom of page
+        ])
 
 
 if __name__ == "__main__":
