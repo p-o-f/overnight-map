@@ -446,7 +446,7 @@ def generate_table(df, title, max_rows=30):
     df_sorted = df.sort_values(by="percent_change", ascending=False)
 
     # Columns to display and their headers
-    columns = ['symbol', 'name', 'sector', 'percent_change', 'market_cap', 'volume', 'average_volume', 'last_trade_price']
+    columns = ['symbol', 'name', 'sector', 'percent_change', 'market_cap', 'volume', 'average_volume', 'last_non_reg_price']
     pretty_names = ['Symbol', 'Name', 'Sector', '% Change', 'Market Cap', 'Volume', 'Avg Volume', 'Last Price']
 
     def format_large_number(value):
@@ -475,7 +475,7 @@ def generate_table(df, title, max_rows=30):
             html.Tbody([
                 html.Tr([
                     html.Td(
-                        format_large_number(df_sorted.iloc[i][col]) if col in ['market_cap', 'volume', 'average_volume', 'last_trade_price']
+                        format_large_number(df_sorted.iloc[i][col]) if col in ['market_cap', 'volume', 'average_volume', 'last_non_reg_price']
                         else f"{df_sorted.iloc[i][col]:+.2f}%" if col == 'percent_change'
                         else df_sorted.iloc[i][col],
                         style={'border': '1px solid white'}
