@@ -8,3 +8,4 @@ requests>=2.31.0
 selenium>=4.15.0
 webdriver-manager>=4.0.0
 gunicorn>=21.2.0
+Flask-CORS # pin a version later; can use pip freeze > requirements.txt
