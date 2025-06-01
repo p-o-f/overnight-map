@@ -93,7 +93,7 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
     if RUNNING_LOCALLY:
         driver = webdriver.Chrome(options=chrome_options)
         
-    else: # for deployment on Render.com
+    else: # for cloud deployment
         # Explicit Chrome binary path (installed by render-build.sh)
         chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
         
