@@ -46,13 +46,11 @@ last_token_time = 0
 TOKEN_REFRESH_SECONDS = 1800  # 30 mins
 
 BOTTOM_CAPTION = html.P([
-    "Please note that this is a free service and is not affiliated with Robinhood, though all data is sourced from Robinhood. ",
-    "The data is provided for informational purposes only and should not be considered financial advice. ",
-    "The data is updated every 5 minutes, but may not reflect real-time market conditions. ",
-    "Please do your own research before making any investment decisions. ",
-    "If you find this service useful, consider supporting the server costs for this project by ",
+    "Please note that this is a free service and is not affiliated with Robinhood, though all provided data is sourced from Robinhood. ",
+    "This data is provided for informational purposes only and should not be considered financial advice; this data might be inaccurate. ",
+    "If you find this service useful, please consider supporting the server costs for this project by ",
     html.A("DONATING HERE.", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
-    ], style={'color': 'white', 'marginTop': '12px', 'fontSize': '12px', 'textAlign': 'center'})
+    ], style={'color': 'white', 'marginTop': '12px', 'fontSize': '14px', 'textAlign': 'center'})
 
 
 def get_sp500_index_info():
