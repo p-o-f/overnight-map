@@ -484,7 +484,6 @@ def generate_table(df, title, max_rows=30):
 
 # Set the layout of the app
 app.layout = html.Div([
-    dcc.Store(id='cached-tabs-data', storage_type='memory'),
     html.H1("Overnight Stock Market Heat Map", style={'color': 'white'}),
     dcc.Tabs(id="index-tabs", value='sp500', children=[
         dcc.Tab(label='S&P 500', value='sp500'),
@@ -498,14 +497,18 @@ app.layout = html.Div([
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
 
 
-# First callback to update the graph
+# Define callback to update the graph
 @app.callback(
-    Output('cached-tabs-data', 'data'),
+    Output('content-container', 'children'),
+    Input('index-tabs', 'value'),
     Input('refresh-interval', 'n_intervals')
 )
-def preload_tab_content(n):
+def update_content(selected_index, n):
     global last_token, last_token_time
 
+    ctx = callback_context
+    print("Callback was triggered by:", ctx.triggered)  
+    
     now = time.time()
     if now - last_token_time > TOKEN_REFRESH_SECONDS:
         print("🔁 Refreshing token and figures...")
@@ -515,64 +518,32 @@ def preload_tab_content(n):
     else:
         print("✅ Using cached figures")
 
-    return {
-        'sp500': html.Div([
+    if selected_index == 'sp500':
+        return html.Div([
             dcc.Graph(figure=spx_fig, id='heatmap-graph'),
-            html.P([
-                "Please note that this is a free service and is not affiliated with Robinhood. ",
-                "The data is provided for informational purposes only and should not be considered financial advice. ",
-                "The data is updated every 5 minutes, but may not reflect real-time market conditions. ",
-                "Please do your own research before making any investment decisions. ",
-                "If you find this service useful, consider supporting the server costs for this project by ",
-                html.A("DONATING HERE", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
-            ], style={'color': 'white', 'marginTop': '15px'})
-        ]),
-        'nasdaq': html.Div([
-            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
-            html.P([
-                "Please note that this is a free service and is not affiliated with Robinhood. ",
-                "The data is provided for informational purposes only and should not be considered financial advice. ",
-                "The data is updated every 5 minutes, but may not reflect real-time market conditions. ",
-                "Please do your own research before making any investment decisions. ",
-                "If you find this service useful, consider supporting the server costs for this project by ",
-                html.A("DONATING HERE", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
-            ], style={'color': 'white', 'marginTop': '15px'})
-        ]),
-        'listview_spx': html.Div([
-            generate_table(spx_total_df, "S&P 500", len(spx_total_df)),
-                html.P([
-                "Please note that this is a free service and is not affiliated with Robinhood. ",
-                "The data is provided for informational purposes only and should not be considered financial advice. ",
-                "The data is updated every 5 minutes, but may not reflect real-time market conditions. ",
-                "Please do your own research before making any investment decisions. ",
-                "If you find this service useful, consider supporting the server costs for this project by ",
-                html.A("DONATING HERE", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
-            ], style={'color': 'white', 'marginTop': '15px'})
-        ]),
-        'listview_nasdaq': html.Div([
-            generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df)),
-                html.P([
-                "Please note that this is a free service and is not affiliated with Robinhood. ",
-                "The data is provided for informational purposes only and should not be considered financial advice. ",
-                "The data is updated every 5 minutes, but may not reflect real-time market conditions. ",
-                "Please do your own research before making any investment decisions. ",
-                "If you find this service useful, consider supporting the server costs for this project by ",
-                html.A("DONATING HERE", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
-            ], style={'color': 'white', 'marginTop': '15px'})
+            html.P(
+                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
+                style={'color': 'white', 'marginTop': '20px'}
+            )
         ])
-    }
-
-
-# Second callback to update the view without recomputation
-@app.callback(
-    Output('content-container', 'children'),
-    Input('index-tabs', 'value'),
-    State('cached-tabs-data', 'data')
-)
-def show_tab(selected_index, cached_data):
-    if cached_data and selected_index in cached_data:
-        return cached_data[selected_index]
-    return html.Div("Loading...")
+    elif selected_index == 'nasdaq':
+        return html.Div([
+            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
+            html.P(
+                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
+                style={'color': 'white', 'marginTop': '20px'}
+            )
+        ])
+    elif selected_index == 'listview_spx':
+        return html.Div([
+            generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0),
+            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}),
+        ])
+    elif selected_index == 'listview_nasdaq':
+        return html.Div([
+            generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0),
+            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}),
+        ])
 
 
 if __name__ == "__main__":
