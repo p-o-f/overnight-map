@@ -504,6 +504,11 @@ app.layout = html.Div([
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
 
 
+# Title for tab name; Favicon for browser tab
+app.title = "PF's 24/5 Stock Map"
+app._favicon = ("assets/icon.ico")
+
+
 # Define callback to update the graph
 @app.callback(
     Output('content-container', 'children'),
