@@ -54,6 +54,7 @@ BOTTOM_CAPTION = html.P([
     html.A("DONATING HERE.", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
     ], style={'color': 'white', 'marginTop': '12px', 'fontSize': '12px', 'textAlign': 'center'})
 
+
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
     response = requests.get(url)
