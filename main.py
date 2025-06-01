@@ -548,14 +548,18 @@ def update_content(selected_index, n):
         ])
 
 
+# Do this at global level for gunicorn to pick up
+last_token = get_robinhood_bearer_token()
+while last_token is None:
+    print("❌ Failed to get bearer token, retrying...")
+    time.sleep(1)
+    last_token = get_robinhood_bearer_token()
+    
+print("Bearer token retrieved successfully, preloading figures...")
+
+preload_figures(last_token)  # preload both S&P 500 and Nasdaq heatmaps
+last_token_time = time.time()  # Set initial token time
+
+
 if __name__ == "__main__":
-    token = get_robinhood_bearer_token()
-    
-    if token is None:
-        print("Retrying to get bearer token...")
-        time.sleep(1)
-        token = get_robinhood_bearer_token()
-    
-    print("Bearer token retrieved successfully, preloading figures...")
-    preload_figures(token)  # preload both S&P 500 and Nasdaq heatmaps
     app.run(debug=False, host="0.0.0.0", port=8080)
