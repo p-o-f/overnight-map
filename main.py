@@ -42,7 +42,6 @@ nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
 
-RUNNING_LOCALLY = True  # Set to False if running on a server
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -67,6 +66,7 @@ def get_nasdaq_index_info():
 def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
     # Set up Chrome options for headless browsing
     chrome_options = Options()
+    chrome_options.binary_location = "/usr/bin/chromium-browser"
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=640,360")
@@ -90,16 +90,9 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
     chrome_options.page_load_strategy = 'eager'
     
     print("Starting Chrome in headless mode...")
-    if RUNNING_LOCALLY:
-        driver = webdriver.Chrome(options=chrome_options)
+    service = Service("/usr/bin/chromedriver")
+    driver = webdriver.Chrome(options=chrome_options)
         
-    else: # for cloud deployment
-        # Explicit Chrome binary path (installed by render-build.sh)
-        chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
-        
-        print("Starting Chrome in headless mode...")
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
 
     try:
         # Navigate to any specific stock page
@@ -545,4 +538,4 @@ def update_content(selected_index, n):
 if __name__ == "__main__":
     token = get_robinhood_bearer_token()
     preload_figures(token)  # preload both S&P 500 and Nasdaq heatmaps
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0", port=8080)
