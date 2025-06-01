@@ -41,7 +41,9 @@ spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
-
+last_token = None # To save on Chrome startup time, we will only fetch the token once every TOKEN_REFRESH_SECONDS seconds
+last_token_time = 0
+TOKEN_REFRESH_SECONDS = 1800  # 30 mins
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -501,11 +503,19 @@ app.layout = html.Div([
     Input('refresh-interval', 'n_intervals')
 )
 def update_content(selected_index, n):
-    ctx = callback_context
+    global last_token, last_token_time
 
-    if ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval':
-        token = get_robinhood_bearer_token()
-        preload_figures(token)
+    ctx = callback_context
+    print("Callback was triggered by:", ctx.triggered)  
+    
+    now = time.time()
+    if now - last_token_time > TOKEN_REFRESH_SECONDS:
+        print("🔁 Refreshing token and figures...")
+        last_token = get_robinhood_bearer_token()
+        preload_figures(last_token)
+        last_token_time = now
+    else:
+        print("✅ Using cached figures")
 
     if selected_index == 'sp500':
         return html.Div([
@@ -526,12 +536,12 @@ def update_content(selected_index, n):
     elif selected_index == 'listview_spx':
         return html.Div([
             generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0),
-            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}), # caption at bottom of page
+            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}),
         ])
     elif selected_index == 'listview_nasdaq':
         return html.Div([
             generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0),
-            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}), # caption at bottom of page
+            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}),
         ])
 
 
@@ -545,4 +555,4 @@ if __name__ == "__main__":
     
     print("Bearer token retrieved successfully, preloading figures...")
     preload_figures(token)  # preload both S&P 500 and Nasdaq heatmaps
-    app.run(debug=True, host="0.0.0.0", port=8080)
+    app.run(debug=False, host="0.0.0.0", port=8080)
