@@ -36,7 +36,7 @@ CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stabilit
 app = dash.Dash(__name__)
 server = app.server  # This is for Gunicorn to use
 
-# Global cache for Dash
+# Global constants for Dash
 spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
@@ -44,6 +44,15 @@ nasdaq_total_df = None
 last_token = None # To save on Chrome startup time, we will only fetch the token once every TOKEN_REFRESH_SECONDS seconds
 last_token_time = 0
 TOKEN_REFRESH_SECONDS = 1800  # 30 mins
+
+BOTTOM_CAPTION = html.P([
+    "Please note that this is a free service and is not affiliated with Robinhood. ",
+    "The data is provided for informational purposes only and should not be considered financial advice. ",
+    "The data is updated every 5 minutes, but may not reflect real-time market conditions. ",
+    "Please do your own research before making any investment decisions. ",
+    "If you find this service useful, consider supporting the server costs for this project by ",
+    html.A("DONATING HERE", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
+    ], style={'color': 'white', 'marginTop': '12px', 'fontSize': '12px', 'textAlign': 'center'})
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -493,7 +502,6 @@ app.layout = html.Div([
     ]),
     html.Div(id='content-container'),
     dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
-    
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
 
 
@@ -521,28 +529,22 @@ def update_content(selected_index, n):
     if selected_index == 'sp500':
         return html.Div([
             dcc.Graph(figure=spx_fig, id='heatmap-graph'),
-            html.P(
-                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
-                style={'color': 'white', 'marginTop': '20px'}
-            )
+            BOTTOM_CAPTION
         ])
     elif selected_index == 'nasdaq':
         return html.Div([
             dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
-            html.P(
-                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
-                style={'color': 'white', 'marginTop': '20px'}
-            )
+            BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_spx':
         return html.Div([
             generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0),
-            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}),
+            BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_nasdaq':
         return html.Div([
             generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0),
-            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}),
+            BOTTOM_CAPTION
         ])
 
 
