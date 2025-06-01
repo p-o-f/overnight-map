@@ -528,6 +528,7 @@ def update_content(selected_index, n):
         preload_figures(last_token)
         last_token_time = now
     else:
+        preload_figures(last_token)
         print("✅ Using cached figures")
 
     if selected_index == 'sp500':
