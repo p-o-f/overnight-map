@@ -537,5 +537,12 @@ def update_content(selected_index, n):
 
 if __name__ == "__main__":
     token = get_robinhood_bearer_token()
+    
+    if token is None:
+        print("Retrying to get bearer token...")
+        time.sleep(1)
+        token = get_robinhood_bearer_token()
+    
+    print("Bearer token retrieved successfully, preloading figures...")
     preload_figures(token)  # preload both S&P 500 and Nasdaq heatmaps
     app.run(debug=True, host="0.0.0.0", port=8080)
