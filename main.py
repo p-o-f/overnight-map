@@ -43,7 +43,7 @@ spx_total_df = None
 nasdaq_total_df = None
 last_token = None # To save on Chrome startup time, we will only fetch the token once every TOKEN_REFRESH_SECONDS seconds
 last_token_time = 0
-TOKEN_REFRESH_SECONDS = 1800  # 30 mins
+TOKEN_REFRESH_SECONDS = 300  # 5 mins
 
 BOTTOM_CAPTION = html.P([
     "Please note that this is a free service and is not affiliated with Robinhood, though all provided data is sourced from Robinhood. ",
@@ -528,7 +528,6 @@ def update_content(selected_index, n):
         preload_figures(last_token)
         last_token_time = now
     else:
-        preload_figures(last_token)
         print("✅ Using cached figures")
 
     if selected_index == 'sp500':
