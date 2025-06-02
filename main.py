@@ -420,7 +420,6 @@ def create_heat_map(dataframe, map_title):
     )
     fig.update_layout(
         autosize=True,
-        responsive=True,
     )
     
     #  Styling behavior
