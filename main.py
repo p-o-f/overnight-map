@@ -34,28 +34,6 @@ CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stabilit
 
 # Initialize Dash app
 app = dash.Dash(__name__)
-# For Mobile responsiveness
-app.index_string = ''' 
-<!DOCTYPE html>
-<html>
-    <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        {%metas%}
-        <title>{%title%}</title>
-        {%favicon%}
-        {%css%}
-    </head>
-    <body>
-        {%app_entry%}
-        <footer>
-            {%config%}
-            {%scripts%}
-            {%renderer%}
-        </footer>
-    </body>
-</html>
-'''
- 
 server = app.server  # This is for Gunicorn to use
 
 # Global constants for Dash
@@ -395,8 +373,9 @@ def create_heat_map(dataframe, map_title):
         font_size=13,
         font_color="white",  # text color
         bordercolor="black"  # optional, default is automatic
-        )
     )
+    )
+
     fig.update_layout(
         paper_bgcolor='gray',
         plot_bgcolor='white',
@@ -418,9 +397,6 @@ def create_heat_map(dataframe, map_title):
             )
         )
     )
-    fig.update_layout(
-        autosize=True,
-    )
     
     #  Styling behavior
     fig.update_traces(
@@ -428,7 +404,7 @@ def create_heat_map(dataframe, map_title):
         marker_line_width=0.0,
         marker_line_color=black,
         marker=dict(cornerradius=5),
-        pathbar_visible=False,
+        pathbar_visible=False
     )
 
     fig.data[0]['textfont']['color'] = "white" # Make font for everything (except hovertext) white
@@ -516,36 +492,16 @@ def generate_table(df, title, max_rows=30):
 
 # Set the layout of the app
 app.layout = html.Div([
-    html.H1("Overnight Stock Market Heat Map", style={
-        'color': 'white',
-        'textAlign': 'center',
-        'margin': '0 auto',
-        'padding': '10px'
-    }),
-
+    html.H1("Overnight Stock Market Heat Map", style={'color': 'white'}),
     dcc.Tabs(id="index-tabs", value='sp500', children=[
         dcc.Tab(label='S&P 500', value='sp500'),
         dcc.Tab(label='NASDAQ 100', value='nasdaq'),
         dcc.Tab(label='List View S&P 500', value='listview_spx'),
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
-    ], style={'width': '100%'}),
-
-    html.Div(id='content-container', style={
-        'width': '100%',
-        'height': '100%',
-        'padding': '10px',
-        'boxSizing': 'border-box'
-    }),
-
-    dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),
-
-], style={
-    'backgroundColor': 'rgb(66, 73, 75)',
-    'padding': '10px',
-    'width': '100%',
-    'height': '100vh',  # Use full viewport height
-    'boxSizing': 'border-box'
-})
+    ]),
+    html.Div(id='content-container'),
+    dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
+], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
 
 
 # Title for tab name; Favicon for browser tab
@@ -576,12 +532,12 @@ def update_content(selected_index, n):
 
     if selected_index == 'sp500':
         return html.Div([
-            dcc.Graph(figure=spx_fig, id='heatmap-graph', style={"width": "100%", "height": "100%"}, config={"displayModeBar": False}),
+            dcc.Graph(figure=spx_fig, id='heatmap-graph'),
             BOTTOM_CAPTION
         ])
     elif selected_index == 'nasdaq':
         return html.Div([
-            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph', style={"width": "100%", "height": "100%"}, config={"displayModeBar": False}),
+            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
             BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_spx':
