@@ -395,9 +395,8 @@ def create_heat_map(dataframe, map_title):
         font_size=13,
         font_color="white",  # text color
         bordercolor="black"  # optional, default is automatic
+        )
     )
-    )
-
     fig.update_layout(
         paper_bgcolor='gray',
         plot_bgcolor='white',
@@ -419,6 +418,10 @@ def create_heat_map(dataframe, map_title):
             )
         )
     )
+    fig.update_layout(
+        autosize=True,
+        responsive=True,
+    )
     
     #  Styling behavior
     fig.update_traces(
@@ -427,8 +430,6 @@ def create_heat_map(dataframe, map_title):
         marker_line_color=black,
         marker=dict(cornerradius=5),
         pathbar_visible=False,
-        autosize=True,
-        responsive=True,
     )
 
     fig.data[0]['textfont']['color'] = "white" # Make font for everything (except hovertext) white
