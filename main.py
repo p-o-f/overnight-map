@@ -21,6 +21,7 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 from dash import callback_context
 from dash import dash_table
+from dash import dash_bootstrap_components as dbc
 
 # Performance optimizations
 import functools
@@ -33,7 +34,13 @@ MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
 CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
 
 # Initialize Dash app
-app = dash.Dash(__name__)
+#app = dash.Dash(__name__)
+app = dash.Dash(
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    meta_tags=[
+        {"name": "viewport", "content": "width=device-width, initial-scale=1"}
+    ],
+)
 server = app.server  # This is for Gunicorn to use
 
 # Global constants for Dash
