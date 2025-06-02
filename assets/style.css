@@ -1,46 +1,49 @@
-/* Make sure the entire app takes up the full screen and is scroll-free */
+/* Ensure full-screen layout */
 html, body {
     margin: 0;
     padding: 0;
-    overflow: yscroll;
+    overflow-x: hidden;
     height: 100%;
     width: 100%;
     background-color: rgb(79, 79, 79);
     font-family: "Segoe UI", Roboto, sans-serif;
 }
 
-/* Ensure the root div stretches correctly */
+/* Ensure Dash app content stretches correctly */
 #_dash-app-content {
     height: 100%;
     width: 100%;
 }
 
-/* Center the H1 title and remove extra spacing */
+/* Center title */
 h1 {
     text-align: center;
     margin: 0;
     padding: 15px 0;
     font-size: 2em;
-    color: #222;
-    background-color: "blue";
+    color: white;
 }
 
-/* Tweak the graph container */
+/* Responsive graph container */
 #heatmap-graph {
-    width: 100vw !important;
-    height: 90vh !important; /* adjust based on H1 height */
+    width: 100% !important;
+    height: 80vh !important;
+    max-width: 100%;
+    box-sizing: border-box;
     padding: 0;
     margin: 0;
     display: block;
 }
 
-/* For List View tab */
+/* Table styling for List View tabs */
 table {
     border-collapse: collapse;
     width: 100%;
 }
+
 th, td {
     border: 1px solid white;
     padding: 8px;
     text-align: left;
+    color: white;
 }

@@ -34,6 +34,28 @@ CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stabilit
 
 # Initialize Dash app
 app = dash.Dash(__name__)
+# For Mobile responsiveness
+app.index_string = ''' 
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+ 
 server = app.server  # This is for Gunicorn to use
 
 # Global constants for Dash
@@ -404,7 +426,9 @@ def create_heat_map(dataframe, map_title):
         marker_line_width=0.0,
         marker_line_color=black,
         marker=dict(cornerradius=5),
-        pathbar_visible=False
+        pathbar_visible=False,
+        autosize=True,
+        responsive=True,
     )
 
     fig.data[0]['textfont']['color'] = "white" # Make font for everything (except hovertext) white
