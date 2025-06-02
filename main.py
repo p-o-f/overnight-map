@@ -516,16 +516,36 @@ def generate_table(df, title, max_rows=30):
 
 # Set the layout of the app
 app.layout = html.Div([
-    html.H1("Overnight Stock Market Heat Map", style={'color': 'white'}),
+    html.H1("Overnight Stock Market Heat Map", style={
+        'color': 'white',
+        'textAlign': 'center',
+        'margin': '0 auto',
+        'padding': '10px'
+    }),
+
     dcc.Tabs(id="index-tabs", value='sp500', children=[
         dcc.Tab(label='S&P 500', value='sp500'),
         dcc.Tab(label='NASDAQ 100', value='nasdaq'),
         dcc.Tab(label='List View S&P 500', value='listview_spx'),
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
-    ]),
-    html.Div(id='content-container'),
-    dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
-], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
+    ], style={'width': '100%'}),
+
+    html.Div(id='content-container', style={
+        'width': '100%',
+        'height': '100%',
+        'padding': '10px',
+        'boxSizing': 'border-box'
+    }),
+
+    dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),
+
+], style={
+    'backgroundColor': 'rgb(66, 73, 75)',
+    'padding': '10px',
+    'width': '100%',
+    'height': '100vh',  # Use full viewport height
+    'boxSizing': 'border-box'
+})
 
 
 # Title for tab name; Favicon for browser tab
@@ -556,12 +576,12 @@ def update_content(selected_index, n):
 
     if selected_index == 'sp500':
         return html.Div([
-            dcc.Graph(figure=spx_fig, id='heatmap-graph'),
+            dcc.Graph(figure=spx_fig, id='heatmap-graph', style={"width": "100%", "height": "100%"}, config={"displayModeBar": False}),
             BOTTOM_CAPTION
         ])
     elif selected_index == 'nasdaq':
         return html.Div([
-            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
+            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph', style={"width": "100%", "height": "100%"}, config={"displayModeBar": False}),
             BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_spx':
