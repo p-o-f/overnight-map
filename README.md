@@ -7,6 +7,7 @@ To do list:
 - fix scaling so figures can actually render on mobile
 - add auto-start on boot / auto-restart on crash (via systemd; currently using tmux + manual reboots if something goes wrong)
 - optimize w/ local memory caching by serving pre-rendered Static HTML (pre-generating the Plotly heatmap as a standalone HTML file every 5 minutes; then serve that file statically using a web server or object store, probably GCS)
+- add logging for GCP (so can view logs without having to SSH in)
 
 Some samples of what this looks like (these may be outdated, but the general idea is there).
 
