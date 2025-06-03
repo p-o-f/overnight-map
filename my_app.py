@@ -21,7 +21,6 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 from dash import callback_context
 from dash import dash_table
-import dash_bootstrap_components as dbc
 
 # Performance optimizations
 import functools
@@ -31,34 +30,19 @@ import random
 
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
-CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
+CONCURRENT_REQUESTS = 30  # Can be tuned higher/lower based on network stability
 
 # Initialize Dash app
-#app = dash.Dash(__name__)
-app = dash.Dash(
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
-    meta_tags=[
-        {"name": "viewport", "content": "width=device-width, initial-scale=1"}
-    ],
-)
+app = dash.Dash(__name__)
 server = app.server  # This is for Gunicorn to use
 
-# Global constants for Dash
+# Global cache for Dash
 spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
-last_token = None # To save on Chrome startup time, we will only fetch the token once every TOKEN_REFRESH_SECONDS seconds
-last_token_time = 0
-TOKEN_REFRESH_SECONDS = 300  # 5 mins
 
-BOTTOM_CAPTION = html.P([
-    "Please note that this is a free service and is not affiliated with Robinhood, though all provided data is sourced from Robinhood. ",
-    "This data is provided for informational purposes only and should not be considered financial advice; this data might be inaccurate. ",
-    "If you find this service useful, please consider supporting the server costs for this project by ",
-    html.A("DONATING HERE.", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
-    ], style={'color': 'white', 'marginTop': '12px', 'fontSize': '14px', 'textAlign': 'center'})
-
+RUNNING_LOCALLY = True  # Set to False if running on a server
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -83,7 +67,6 @@ def get_nasdaq_index_info():
 def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
     # Set up Chrome options for headless browsing
     chrome_options = Options()
-    chrome_options.binary_location = "/usr/bin/chromium-browser"
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=640,360")
@@ -107,9 +90,16 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
     chrome_options.page_load_strategy = 'eager'
     
     print("Starting Chrome in headless mode...")
-    service = Service("/usr/bin/chromedriver")
-    driver = webdriver.Chrome(options=chrome_options)
+    if RUNNING_LOCALLY:
+        driver = webdriver.Chrome(options=chrome_options)
         
+    else: # for deployment on Render.com
+        # Explicit Chrome binary path (installed by render-build.sh)
+        chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
+        
+        print("Starting Chrome in headless mode...")
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
 
     try:
         # Navigate to any specific stock page
@@ -210,8 +200,14 @@ async def fetch_symbol_metrics(session, token, symbol):
             "display_span": "day",
             "hide_extended_hours": "false"
         }
-        
         data = await fetch_json(session, quote_url, complex_headers, quote_params)
+        #print(data)
+        #print()
+        #print(data['chart_section'])
+        #exit(0)  # Debugging line to stop execution here
+        
+
+####LOGIC CHANGE HERE-----------------------------------------------------------------------------------------------------
         last_trade_price = data['chart_section']['quote']['last_trade_price'] or 0
         last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price'] or last_trade_price # <-- fixed issue
         extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price'] or 0
@@ -221,7 +217,22 @@ async def fetch_symbol_metrics(session, token, symbol):
         dollar_change = round(float(last_non_reg_price) - float(adjusted_previous_close_price), 2)
         percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
         overnight = previous_close_price != last_non_reg_price
-        
+####LOGIC CHANGE HERE-----------------------------------------------------------------------------------------------------
+
+# FOR DEBUG
+        # print("Instrument id:" + str(instrument_id) + " | " + \
+        #       "Market cap: " + str(market_cap) + " | " + \
+        #         "Volume: " + str(volume) + " | " + \
+        #         "Average volume: " + str(average_volume) + " | " + \
+        #         "Dollar change: " + str(dollar_change) + " | " + \
+        #         "Percent change: " + str(percent_change) + " | " + \
+        #         "Last trade price: " + str(last_trade_price) + " | " + \
+        #         "Last non-reg price: " + str(last_non_reg_price) + " | " + \
+        #         "Extended hours price: " + str(extended_hours_price) + " | " + \
+        #         "Previous close price: " + str(previous_close_price) + " | " + \
+        #         "Adjusted previous close price: " + str(adjusted_previous_close_price) + " | " + \
+        #         "Overnight: " + str(overnight) + " | ")
+                
         # Process and return everything important as a tuple
         return instrument_id, market_cap, volume, average_volume, dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
 
@@ -511,11 +522,6 @@ app.layout = html.Div([
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
 
 
-# Title for tab name; Favicon for browser tab
-app.title = "PF's 24/5 Stock Map"
-app._favicon = ("assets/icon.ico")
-
-
 # Define callback to update the graph
 @app.callback(
     Output('content-container', 'children'),
@@ -523,54 +529,41 @@ app._favicon = ("assets/icon.ico")
     Input('refresh-interval', 'n_intervals')
 )
 def update_content(selected_index, n):
-    global last_token, last_token_time
-
     ctx = callback_context
-    print("Callback was triggered by:", ctx.triggered)  
-    
-    now = time.time()
-    if now - last_token_time > TOKEN_REFRESH_SECONDS:
-        print("🔁 Refreshing token and figures...")
-        last_token = get_robinhood_bearer_token()
-        preload_figures(last_token)
-        last_token_time = now
-    else:
-        print("✅ Using cached figures")
+
+    if ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval':
+        token = get_robinhood_bearer_token()
+        preload_figures(token)
 
     if selected_index == 'sp500':
         return html.Div([
             dcc.Graph(figure=spx_fig, id='heatmap-graph'),
-            BOTTOM_CAPTION
+            html.P(
+                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
+                style={'color': 'white', 'marginTop': '20px'}
+            )
         ])
     elif selected_index == 'nasdaq':
         return html.Div([
             dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
-            BOTTOM_CAPTION
+            html.P(
+                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
+                style={'color': 'white', 'marginTop': '20px'}
+            )
         ])
     elif selected_index == 'listview_spx':
         return html.Div([
             generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0),
-            BOTTOM_CAPTION
+            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}), # caption at bottom of page
         ])
     elif selected_index == 'listview_nasdaq':
         return html.Div([
             generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0),
-            BOTTOM_CAPTION
+            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}), # caption at bottom of page
         ])
 
 
-# Do this at global level for gunicorn to pick up
-last_token = get_robinhood_bearer_token()
-while last_token is None:
-    print("❌ Failed to get bearer token, retrying...")
-    time.sleep(1)
-    last_token = get_robinhood_bearer_token()
-    
-print("Bearer token retrieved successfully, preloading figures...")
-
-preload_figures(last_token)  # preload both S&P 500 and Nasdaq heatmaps
-last_token_time = time.time()  # Set initial token time
-
-
 if __name__ == "__main__":
-    app.run(debug=False, host="0.0.0.0", port=8080)
+    token = get_robinhood_bearer_token()
+    preload_figures(token)  # preload both S&P 500 and Nasdaq heatmaps
+    app.run(debug=True)
