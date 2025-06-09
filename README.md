@@ -1,5 +1,7 @@
 # [Overnight Map](https://www.247map.app)
 
+CURRENTLY DOWN, WILL PATCH AFTER VACATION
+
 [This](https://finviz.com/map.ashx), but with 24/5 data where applicable. Hosted on a Google Cloud VM (Compute Engine) instance.
 
 To do list:
