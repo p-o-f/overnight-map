@@ -76,7 +76,7 @@ def get_nasdaq_index_info():
     data = response.json()[0]
     stock_attributes = []
     for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
-        stock_attributes.append([company[0], company[1], company[2], company[3]])
+        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <--- fixed here, was using company[0] for symbol
     return stock_attributes
 
 

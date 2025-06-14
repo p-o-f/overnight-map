@@ -50,7 +50,7 @@ def get_sp500_index_info():
     data = response.json()[0]
     stock_attributes = []
     for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
-        stock_attributes.append([company[1], company[0], company[2], company[3]])  
+        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Formal name, ticker symbol, sector, subsector 
     return stock_attributes
     
 
@@ -60,9 +60,14 @@ def get_nasdaq_index_info():
     data = response.json()[0]
     stock_attributes = []
     for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
-        stock_attributes.append([company[0], company[1], company[2], company[3]])
+        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Ticker symbol, formal name, sector, subsector FIXED HERE
     return stock_attributes
 
+# print(get_sp500_index_info())  # Debugging line to check if the function works
+# print()
+# print()
+# print(get_nasdaq_index_info())  # Debugging line to check if the function works
+# exit()
 
 def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
     # Set up Chrome options for headless browsing
@@ -427,6 +432,7 @@ def create_heat_map(dataframe, map_title):
 
     fig.data[0]['textfont']['color'] = "white" # Make font for everything (except hovertext) white
 
+    print("Fig created for " + map_title)
     return fig
 
 
