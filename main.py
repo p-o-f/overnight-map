@@ -50,7 +50,7 @@ spx_total_df = None
 nasdaq_total_df = None
 last_token = None  # To save on Chrome startup time, we will only fetch the token once every TOKEN_REFRESH_SECONDS seconds
 last_token_time = 0
-TOKEN_REFRESH_SECONDS = 300  # 5 mins
+TOKEN_REFRESH_SECONDS = 1200  # 20 mins
 
 BOTTOM_CAPTION = html.P([
     "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
