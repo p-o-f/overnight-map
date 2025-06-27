@@ -7,13 +7,13 @@ import numpy as np
 from datetime import datetime
 import pytz
 
-# Selenium 
+# Selenium
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager  # auto-manage ChromeDriver
 
-# Plotly 
+# Plotly
 import plotly.graph_objects as go
 import plotly.express as px
 import dash
@@ -30,11 +30,11 @@ import aiohttp
 import random
 
 # Constants for async requests
-MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
+MAX_RETRIES = 3  # Arbitrary number of retries for failed requests
 CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
 
 # Initialize Dash app
-#app = dash.Dash(__name__)
+# app = dash.Dash(__name__)
 app = dash.Dash(
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     meta_tags=[
@@ -48,16 +48,17 @@ spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
-last_token = None # To save on Chrome startup time, we will only fetch the token once every TOKEN_REFRESH_SECONDS seconds
+last_token = None  # To save on Chrome startup time, we will only fetch the token once every TOKEN_REFRESH_SECONDS seconds
 last_token_time = 0
 TOKEN_REFRESH_SECONDS = 300  # 5 mins
 
 BOTTOM_CAPTION = html.P([
-    "Please note that this is a free service and is not affiliated with Robinhood, though all provided data is sourced from Robinhood. ",
-    "This data is provided for informational purposes only and should not be considered financial advice; this data might be inaccurate. ",
+    "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
+    "The provided data for should not be considered as any type of financial advice and may be inaccurate. ",
     "If you find this service useful, please consider supporting the server costs for this project by ",
-    html.A("DONATING HERE.", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
-    ], style={'color': 'white', 'marginTop': '12px', 'fontSize': '14px', 'textAlign': 'center'})
+    html.A("DONATING HERE.", href="https://buymeacoffee.com/pfdev",
+           target="_blank", style={'color': 'lightblue'})
+], style={'color': 'white', 'marginTop': '10px', 'fontSize': '12px', 'textAlign': 'center'})
 
 
 def get_sp500_index_info():
@@ -65,22 +66,25 @@ def get_sp500_index_info():
     response = requests.get(url)
     data = response.json()[0]
     stock_attributes = []
-    for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
-        stock_attributes.append([company[1], company[0], company[2], company[3]])  
+    for company in data[1:]:  # the first element is the header, format is: SYMBOL / COMPANY_NAME / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
+        stock_attributes.append(
+            [company[1], company[0], company[2], company[3]])
     return stock_attributes
-    
 
-def get_nasdaq_index_info():   
+
+def get_nasdaq_index_info():
     url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
     response = requests.get(url)
     data = response.json()[0]
     stock_attributes = []
-    for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
-        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <--- fixed here, was using company[0] for symbol
+    # the first element is the header, format is: SYMBOL / COMPANY_NAME / GICS SECTOR / GICS SUB-INDUSTRY
+    for company in data[1:]:
+        stock_attributes.append(
+            [company[1], company[0], company[2], company[3]])
     return stock_attributes
 
 
-def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
+def get_robinhood_bearer_token(timeout=2):  # Below 1 second does not work
     # Set up Chrome options for headless browsing
     chrome_options = Options()
     chrome_options.binary_location = "/usr/bin/chromium-browser"
@@ -88,56 +92,57 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=640,360")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    
+
     # Speed optimizations
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-default-apps")
     chrome_options.add_argument("--disable-popup-blocking")
-    chrome_options.add_argument("--blink-settings=imagesEnabled=false")  # Disable images
+    chrome_options.add_argument(
+        "--blink-settings=imagesEnabled=false")  # Disable images
     chrome_options.add_argument("--disable-notifications")
     chrome_options.add_argument("--disable-infobars")
-    
+
     # Add user agent to mimic a real browser
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
-    
+    chrome_options.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
+
     # Enable logging for network requests
     chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-    
+
     # Set page load strategy to 'eager' to proceed as soon as the DOM is ready
     chrome_options.page_load_strategy = 'eager'
-    
+
     print("Starting Chrome in headless mode...")
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(options=chrome_options)
-        
 
     try:
         # Navigate to any specific stock page
         print("Navigating to S&P 500 ETF page...")
         driver.get("https://robinhood.com/stocks/SPY")
-        
+
         time.sleep(timeout)  # Wait for page to load
-        
+
         # Extract bearer token from network logs
         print("Extracting bearer token from network requests...")
         bearer_token = None
-        
+
         logs = driver.get_log('performance')
         for log in logs:
             network_log = json.loads(log['message'])
-            
+
             # Look for network requests
-            if ('message' in network_log and 
-                'method' in network_log['message'] and 
-                network_log['message']['method'] == 'Network.requestWillBeSent'):
-                
+            if ('message' in network_log and
+                'method' in network_log['message'] and
+                    network_log['message']['method'] == 'Network.requestWillBeSent'):
+
                 request = network_log['message']['params']
-                
+
                 # Check if this request has authorization headers
-                if ('request' in request and 
-                    'headers' in request['request'] and 
-                    'Authorization' in request['request']['headers']):
-                    
+                if ('request' in request and
+                    'headers' in request['request'] and
+                        'Authorization' in request['request']['headers']):
+
                     auth_header = request['request']['headers']['Authorization']
                     if auth_header.startswith('Bearer '):
                         bearer_token = auth_header.replace('Bearer ', '')
@@ -148,7 +153,7 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
             return None
 
         return bearer_token
-        
+
     finally:
         # Always close the browser
         print("Closing browser...")
@@ -166,13 +171,13 @@ async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIE
         except Exception as e:
             print(f"Attempt {attempt+1} failed for {url}: {e}")
         await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
-    return None #TODO <-- fix this line later to do something more useful
+    return None  # TODO <-- fix this line later to do something more useful
 
 
 async def fetch_symbol_metrics(session, token, symbol):
     try:
         basic_headers = {"User-Agent": "Mozilla/5.0"}
-        complex_headers = { # Taken from Network tab in Chrome DevTools; these are the headers that are required to get live quote data
+        complex_headers = {  # Taken from Network tab in Chrome DevTools; these are the headers that are required to get live quote data
             "authority": "bonfire.robinhood.com",
             "accept": "*/*",
             "accept-encoding": "gzip, deflate, br, zstd",
@@ -191,7 +196,7 @@ async def fetch_symbol_metrics(session, token, symbol):
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
             "x-hyper-ex": "enabled"
         }
-        
+
         # Step 1: Get instrument ID
         instrument_id_url = f"https://api.robinhood.com/quotes/{symbol}/"
         id_data = await fetch_json(session, instrument_id_url, basic_headers)
@@ -202,26 +207,29 @@ async def fetch_symbol_metrics(session, token, symbol):
         fundamental_data = await fetch_json(session, fundamental_data_url, basic_headers)
         market_cap = float(fundamental_data['market_cap'])
         volume = fundamental_data['volume']
-        average_volume = fundamental_data['average_volume'] # avg volume for last 2 weeks
-        
+        # avg volume for last 2 weeks
+        average_volume = fundamental_data['average_volume']
+
         # Step 3: Get latest quote
         quote_url = f"https://bonfire.robinhood.com/instruments/{instrument_id}/detail-page-live-updating-data/"
         quote_params = {
             "display_span": "day",
             "hide_extended_hours": "false"
         }
-        
+
         data = await fetch_json(session, quote_url, complex_headers, quote_params)
         last_trade_price = data['chart_section']['quote']['last_trade_price'] or 0
-        last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price'] or last_trade_price # <-- fixed issue
+        last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price'] or last_trade_price
         extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price'] or 0
         previous_close_price = data['chart_section']['quote']['previous_close'] or 0
         adjusted_previous_close_price = data['chart_section']['quote']['adjusted_previous_close'] or 0
-        
-        dollar_change = round(float(last_non_reg_price) - float(adjusted_previous_close_price), 2)
-        percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
+
+        dollar_change = round(float(last_non_reg_price) -
+                              float(adjusted_previous_close_price), 2)
+        percent_change = round(
+            dollar_change / float(adjusted_previous_close_price) * 100, 2)
         overnight = previous_close_price != last_non_reg_price
-        
+
         # Process and return everything important as a tuple
         return instrument_id, market_cap, volume, average_volume, dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
 
@@ -240,29 +248,32 @@ async def fetch_all_symbols(symbols, token):
     connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession(connector=connector) as session:
         # Create a list of tasks for each symbol
-        tasks = [fetch_symbol_metrics_limited(session, token, symbol) for symbol in symbols]
+        tasks = [fetch_symbol_metrics_limited(
+            session, token, symbol) for symbol in symbols]
         results = await asyncio.gather(*tasks)
 
     return results
 
 
-def create_heat_map(dataframe, map_title):    
+def create_heat_map(dataframe, map_title):
     palette = {
         -3: "#e74b3e", -2: "#b44b48", -1: "#84494e",
         0: "#414553", 1: "#457351", 2: "#509957", 3: "#63c667"
     }
-    
+
     black = "#262930"
-    
+
     # Define a custom diverging color scale with more granularity around ±1%
     color_scale = [
-        [0.0, palette[-3]], [0.125, palette[-2]], [0.25, palette[-1]], 
-        [0.5, palette[0]], [0.75, palette[1]], [0.875, palette[2]], [1.0, palette[3]]
+        [0.0, palette[-3]], [0.125, palette[-2]], [0.25, palette[-1]],
+        [0.5, palette[0]], [0.75, palette[1]], [
+            0.875, palette[2]], [1.0, palette[3]]
     ]
 
     # Apply a power transformation to the market cap values
     power = 0.6
-    dataframe['transformed_market_cap'] = np.power(dataframe['market_cap'], power)
+    dataframe['transformed_market_cap'] = np.power(
+        dataframe['market_cap'], power)
 
     # Create formatted label with percent change
     dataframe['symbol_with_change'] = dataframe.apply(
@@ -284,25 +295,31 @@ def create_heat_map(dataframe, map_title):
     # Current time in New York
     ny_time = datetime.now(ny_tz)
     # Format like "5/13/2025, 6:14 AM, EST"
-    formatted_time = ny_time.strftime("%m/%d/%Y, %I:%M %p, %Z").lstrip("0").replace(" 0", " ") # For cross-platform zero-stripping
-    total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols" 
-    total_title += " " * 160 # add some whitespace
-    total_title += f"Last refreshed at: {formatted_time}"
-    
+    # For cross-platform zero-stripping
+    formatted_time = ny_time.strftime(
+        "%m/%d/%Y, %I:%M %p, %Z").lstrip("0").replace(" 0", " ")
+    graph_top_title = f"{map_title} - Overnight Trading is currently enabled for " + \
+        str(overnight_on) + " symbols and disabled for " + \
+        str(overnight_off) + " symbols"
+    total_title = f"Last refreshed at: {formatted_time}"
+
     # Create Plotly treemap
     fig = px.treemap(
         dataframe,
-        path=[px.Constant(map_title), 'sector', 'subsector', 'symbol_with_change'], 
+        path=[px.Constant(graph_top_title), 'sector',
+              'subsector', 'symbol_with_change'],
         values='transformed_market_cap',
         color='percent_change',
-        color_continuous_scale=color_scale, 
+        color_continuous_scale=color_scale,
         range_color=(-3.1, 3.1),
-        custom_data=['name', 'last_non_reg_price', 'overnight', "volume", "average_volume"],
-        )
-    
+        custom_data=['name', 'last_non_reg_price',
+                     'overnight', "volume", "average_volume"],
+    )
+
     # Function to format each row based on the count of '(?)'; this is necessary because Plotly does not allow for custom hover text
     # to be set for each individual node in a treemap
     hover_data = fig.data[0].customdata
+
     def format_row(row):
         # Count how many instances of '(?)' there are
         question_marks_count = np.count_nonzero(row == '(?)')
@@ -311,8 +328,8 @@ def create_heat_map(dataframe, map_title):
         if question_marks_count == 0:
             name, last_price, overnight_trading, volume, avg_volume, percent_change = row
             formatted_last_price = round(float(last_price), 3)
-            formatted_volume = round(float(volume)/ 1000000, 2) 
-            formatted_avg_volume = round(float(avg_volume)/ 1000000, 2) 
+            formatted_volume = round(float(volume) / 1000000, 2)
+            formatted_avg_volume = round(float(avg_volume) / 1000000, 2)
             formatted_volume = f"{formatted_volume}M" if formatted_volume >= 1 else f"{formatted_volume * 1000}K"
             formatted_avg_volume = f"{formatted_avg_volume}M" if formatted_avg_volume >= 1 else f"{formatted_avg_volume * 1000}K"
             formatted_percent_change = round(float(percent_change), 3)
@@ -324,7 +341,7 @@ def create_heat_map(dataframe, map_title):
                 f"Average Volume: {formatted_avg_volume}",
                 f"Percent Change: {formatted_percent_change}%"
             ]
-        
+
         # If there are 4 instances of '(?)', format with placeholders and 'Overnight Trading Enabled' and 'Percent Change'
         elif question_marks_count == 4:
             _, _, overnight_trading, _, _, percent_change = row
@@ -337,12 +354,12 @@ def create_heat_map(dataframe, map_title):
                 f"Overnight Trading Enabled: {overnight_trading}",
                 f"Percent Change of Subsector: {formatted_percent_change}%"
             ]
-        
+
         # If there are 5 instances of '(?)', format with placeholders and just 'Percent Change'
         elif question_marks_count == 5:
             _, _, _, _, _, percent_change = row
             formatted_percent_change = round(float(percent_change), 3)
-            
+
             return [
                 " ",
                 " ",
@@ -354,68 +371,84 @@ def create_heat_map(dataframe, map_title):
 
         # If other cases occur, return the row as-is
         return row
-    
+
     fig.data[0].customdata = np.array([format_row(row) for row in hover_data])
 
     # Set hover text
     fig.update_traces(
-        hovertemplate=
-            '<span style="color:white;">%{label}</span><br><br>' +
-            #'<span style="color:white;">Market Cap: $%{value}</span><br>' + # TODO fix this to be proper units
-            '<span style="color:white;">Parent Category: %{parent}</span><br>' +
-            '<span style="color:white;">Percentage of Index: %{percentRoot:.2%}</span><br>' +
-            '<span style="color:white;">Percentage of Parent Category: %{percentParent:.2%}</span><br><br>' +
-            '<span style="color:white;">%{customdata[0]}</span><br>' +
-            '<span style="color:white;">%{customdata[1]}</span><br>' +
-            '<span style="color:white;">%{customdata[2]}</span><br>' +
-            '<span style="color:white;">%{customdata[3]}</span><br>' +
-            '<span style="color:white;">%{customdata[4]}</span><br>' +
-            '<span style="color:white;">%{customdata[5]}</span><br>' +
-            '<extra></extra>'
+        hovertemplate='<span style="color:white;">%{label}</span><br><br>' +
+        # '<span style="color:white;">Market Cap: $%{value}</span><br>' + # TODO fix this to be proper units
+        '<span style="color:white;">Parent Category: %{parent}</span><br>' +
+        '<span style="color:white;">Percentage of Index: %{percentRoot:.2%}</span><br>' +
+        '<span style="color:white;">Percentage of Parent Category: %{percentParent:.2%}</span><br><br>' +
+        '<span style="color:white;">%{customdata[0]}</span><br>' +
+        '<span style="color:white;">%{customdata[1]}</span><br>' +
+        '<span style="color:white;">%{customdata[2]}</span><br>' +
+        '<span style="color:white;">%{customdata[3]}</span><br>' +
+        '<span style="color:white;">%{customdata[4]}</span><br>' +
+        '<span style="color:white;">%{customdata[5]}</span><br>' +
+        '<extra></extra>'
     )
 
     fig.update_layout(
-    hoverlabel=dict(
-        bgcolor='rgb(66, 73, 75)',     # background color
-        font_size=13,
-        font_color="white",  # text color
-        bordercolor="black"  # optional, default is automatic
-    )
+        hoverlabel=dict(
+            bgcolor='rgb(66, 73, 75)',     # background color of hovertext
+            font_size=13,
+            font_color="white",  # text color
+            bordercolor="black"  # optional, default is automatic
+        )
     )
 
     fig.update_layout(
         paper_bgcolor='gray',
         plot_bgcolor='white',
         coloraxis_colorbar=dict(
-            title="Rolling % Change",
-            thicknessmode="pixels", thickness=20,
-            lenmode="fraction", len=0.33,
-            yanchor="bottom", y=-0.075,
-            xanchor="center", x=0.5,
+            title="% Change",
+            thicknessmode="pixels",
+            thickness=16, 
+            lenmode="fraction",
+            len=0.5,        # 50% width
+            yanchor="bottom",
+            y=-0.1,        # move coloraxis down a bit
+            xanchor="center",
+            x=0.5,
             orientation="h",
-            title_font=dict(size=12, color="white"),
-            tickfont=dict(size=10, color="white"),
-        ),
-        title=dict(
-            text=total_title,  # Custom title text
-            font=dict(
-                size=18,
-                color='white'  # Custom font color
-            )
+            title_font=dict(size=10, color="white"),
+            tickfont=dict(size=8, color="white"),
         )
     )
-    
+
+    fig.update_layout(
+        title=dict(
+            text=total_title,
+            font=dict(
+                size=14,
+                color='white'
+            ),
+            x=0.5,             # center horizontally
+            xanchor='center'   # aanchor the x=0.5 position at the center of the text
+        )
+    )
+
     #  Styling behavior
     fig.update_traces(
         textposition='middle center',
         marker_line_width=0.0,
         marker_line_color=black,
         marker=dict(cornerradius=5),
-        pathbar_visible=False
+        pathbar_visible=False,
+        textfont=dict(
+            color="white",  # Text color for labels
+        )
     )
 
-    fig.data[0]['textfont']['color'] = "white" # Make font for everything (except hovertext) white
+    # Better view for mobile
+    fig.update_layout(
+        autosize=True,
+        margin=dict(l=30, r=30, t=30, b=0),  # Remove margins
+    )
 
+    print("Fig created for " + map_title)
     return fig
 
 
@@ -423,30 +456,34 @@ def preload_figures(token):
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
 
-    #Debug
+    # Debug
     if not token:
         print("❌ Bearer token was None — likely token fetch failure.")
     else:
         print("✅ Bearer token successfully retrieved")
-        
+
     # S&P 500
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
-    spx_results = asyncio.run(fetch_all_symbols(spx_df['symbol'].tolist(), token))
+    spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
+                          "name", "symbol", "sector", "subsector"])
+    spx_results = asyncio.run(fetch_all_symbols(
+        spx_df['symbol'].tolist(), token))
     spx_metrics_df = pd.DataFrame(spx_results, columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                         "dollar_change", "percent_change", "last_trade_price",
-                                                         "last_non_reg_price", "extended_hours_price",
-                                                         "previous_close_price", "adjusted_previous_close_price", "overnight"])
+                                                        "dollar_change", "percent_change", "last_trade_price",
+                                                        "last_non_reg_price", "extended_hours_price",
+                                                        "previous_close_price", "adjusted_previous_close_price", "overnight"])
     spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
     spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
     spx_fig = create_heat_map(spx_total_df, "S&P 500")
 
     # NASDAQ
-    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
-    nasdaq_results = asyncio.run(fetch_all_symbols(nasdaq_df['symbol'].tolist(), token))
+    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
+                             "name", "symbol", "sector", "subsector"])
+    nasdaq_results = asyncio.run(fetch_all_symbols(
+        nasdaq_df['symbol'].tolist(), token))
     nasdaq_metrics_df = pd.DataFrame(nasdaq_results, columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                               "dollar_change", "percent_change", "last_trade_price",
-                                                               "last_non_reg_price", "extended_hours_price",
-                                                               "previous_close_price", "adjusted_previous_close_price", "overnight"])
+                                                              "dollar_change", "percent_change", "last_trade_price",
+                                                              "last_non_reg_price", "extended_hours_price",
+                                                              "previous_close_price", "adjusted_previous_close_price", "overnight"])
     nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
     nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
@@ -456,8 +493,10 @@ def generate_table(df, title, max_rows=30):
     df_sorted = df.sort_values(by="percent_change", ascending=False)
 
     # Columns to display and their headers
-    columns = ['symbol', 'name', 'sector', 'percent_change', 'market_cap', 'volume', 'average_volume', 'last_non_reg_price']
-    pretty_names = ['Symbol', 'Name', 'Sector', '% Change', 'Market Cap', 'Volume', 'Avg Volume', 'Last Price']
+    columns = ['symbol', 'name', 'sector', 'percent_change',
+               'market_cap', 'volume', 'average_volume', 'last_non_reg_price']
+    pretty_names = ['Symbol', 'Name', 'Sector', '% Change',
+                    'Market Cap', 'Volume', 'Avg Volume', 'Last Price']
 
     def format_large_number(value):
         try:
@@ -475,12 +514,14 @@ def generate_table(df, title, max_rows=30):
         except:
             return value
 
-    #TODO can make this sortable by column later (optionally); also need to fix margins and aesthetic stuff
+    # TODO can make this sortable by column later (optionally); also need to fix margins and aesthetic stuff
     return html.Div([
-        html.H3(f"{title} - Top {max_rows} by % Change", style={'color': 'white', 'marginTop': '20px'}),
+        html.H3(f"{title} - Top {max_rows} by % Change",
+                style={'color': 'white', 'marginTop': '20px'}),
         html.Table([
             html.Thead(
-                html.Tr([html.Th(col, style={'color': 'white', 'border': '1px solid white'}) for col in pretty_names])
+                html.Tr([html.Th(col, style={
+                        'color': 'white', 'border': '1px solid white'}) for col in pretty_names])
             ),
             html.Tbody([
                 html.Tr([
@@ -507,9 +548,9 @@ app.layout = html.Div([
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
     ]),
     html.Div(id='content-container'),
-    dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
-], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
-
+    dcc.Interval(id='refresh-interval', interval=5 *
+                 60 * 1000, n_intervals=0),  # 5 minutes
+], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'}) # this bg color sets the color when loading initially
 
 # Title for tab name; Favicon for browser tab
 app.title = "PF's 24/5 Stock Map"
@@ -526,8 +567,8 @@ def update_content(selected_index, n):
     global last_token, last_token_time
 
     ctx = callback_context
-    print("Callback was triggered by:", ctx.triggered)  
-    
+    print("Callback was triggered by:", ctx.triggered)
+
     now = time.time()
     if now - last_token_time > TOKEN_REFRESH_SECONDS:
         print("🔁 Refreshing token and figures...")
@@ -539,22 +580,24 @@ def update_content(selected_index, n):
 
     if selected_index == 'sp500':
         return html.Div([
-            dcc.Graph(figure=spx_fig, id='heatmap-graph'),
+            dcc.Graph(figure=spx_fig, id='heatmap-graph', config={'responsive': True}),
             BOTTOM_CAPTION
         ])
     elif selected_index == 'nasdaq':
         return html.Div([
-            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
+            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph', config={'responsive': True}),
             BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_spx':
         return html.Div([
-            generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0),
+            generate_table(spx_total_df, "S&P 500", len(
+                spx_total_df) if spx_total_df is not None else 0),
             BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_nasdaq':
         return html.Div([
-            generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0),
+            generate_table(nasdaq_total_df, "NASDAQ 100", len(
+                nasdaq_total_df) if nasdaq_total_df is not None else 0),
             BOTTOM_CAPTION
         ])
 
@@ -565,7 +608,7 @@ while last_token is None:
     print("❌ Failed to get bearer token, retrying...")
     time.sleep(1)
     last_token = get_robinhood_bearer_token()
-    
+
 print("Bearer token retrieved successfully, preloading figures...")
 
 preload_figures(last_token)  # preload both S&P 500 and Nasdaq heatmaps
