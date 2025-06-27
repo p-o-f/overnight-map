@@ -43,6 +43,13 @@ spx_total_df = None
 nasdaq_total_df = None
 
 RUNNING_LOCALLY = True  # Set to False if running on a server
+BOTTOM_CAPTION = html.P([
+    "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
+    "The provided data for should not be considered as any type of financial advice and may be inaccurate. ",
+    "If you find this service useful, please consider supporting the server costs for this project by ",
+    html.A("DONATING HERE.", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'})
+    ], style={'color': 'white', 'marginTop': '10px', 'fontSize': '12px', 'textAlign': 'center'})
+
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -301,14 +308,13 @@ def create_heat_map(dataframe, map_title):
     ny_time = datetime.now(ny_tz)
     # Format like "5/13/2025, 6:14 AM, EST"
     formatted_time = ny_time.strftime("%m/%d/%Y, %I:%M %p, %Z").lstrip("0").replace(" 0", " ") # For cross-platform zero-stripping
-    total_title = f"For {map_title}, Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols" 
-    total_title += " " * 160 # add some whitespace
-    total_title += f"Last refreshed at: {formatted_time}"
+    graph_top_title = f"{map_title} - Overnight Trading is currently enabled for " + str(overnight_on) + " symbols and disabled for " + str(overnight_off) + " symbols" 
+    total_title = f"Last refreshed at: {formatted_time}"
     
     # Create Plotly treemap
     fig = px.treemap(
         dataframe,
-        path=[px.Constant(map_title), 'sector', 'subsector', 'symbol_with_change'], 
+        path=[px.Constant(graph_top_title), 'sector', 'subsector', 'symbol_with_change'], 
         values='transformed_market_cap',
         color='percent_change',
         color_continuous_scale=color_scale, 
@@ -392,32 +398,41 @@ def create_heat_map(dataframe, map_title):
 
     fig.update_layout(
     hoverlabel=dict(
-        bgcolor='rgb(66, 73, 75)',     # background color
-        font_size=13,
+        bgcolor='rgb(66, 73, 75)',     # background color of hovertext
+        font_size=13, #13
         font_color="white",  # text color
         bordercolor="black"  # optional, default is automatic
     )
     )
-
+    
     fig.update_layout(
         paper_bgcolor='gray',
         plot_bgcolor='white',
         coloraxis_colorbar=dict(
-            title="Rolling % Change",
-            thicknessmode="pixels", thickness=20,
-            lenmode="fraction", len=0.33,
-            yanchor="bottom", y=-0.075,
-            xanchor="center", x=0.5,
+            title="% Change",
+            thicknessmode="pixels",
+            thickness=16,  # a bit thinner
+            lenmode="fraction",
+            len=0.5,        # 50% width
+            yanchor="bottom",
+            y=-0.1,        # moves it further down
+            xanchor="center",
+            x=0.5,
             orientation="h",
-            title_font=dict(size=12, color="white"),
-            tickfont=dict(size=10, color="white"),
-        ),
+            title_font=dict(size=10, color="white"),
+            tickfont=dict(size=8, color="white"),
+        )
+    )
+
+    fig.update_layout(
         title=dict(
-            text=total_title,  # Custom title text
+            text=total_title,
             font=dict(
-                size=18,
-                color='white'  # Custom font color
-            )
+                size=14,
+                color='white'
+            ),
+            x=0.5,             # ← center horizontally
+            xanchor='center'   # ← anchor the x=0.5 position at the center of the text
         )
     )
     
@@ -427,10 +442,17 @@ def create_heat_map(dataframe, map_title):
         marker_line_width=0.0,
         marker_line_color=black,
         marker=dict(cornerradius=5),
-        pathbar_visible=False
+        pathbar_visible=False,
+        textfont=dict(
+        color="white", # Text color for labels
+        )
     )
-
-    fig.data[0]['textfont']['color'] = "white" # Make font for everything (except hovertext) white
+    
+    # Better view for mobile
+    fig.update_layout(
+        autosize=True,
+        margin=dict(l=30, r=30, t=30, b=0),  # Remove margins
+    )
 
     print("Fig created for " + map_title)
     return fig
@@ -494,7 +516,7 @@ def generate_table(df, title, max_rows=30):
 
     #TODO can make this sortable by column later (optionally); also need to fix margins and aesthetic stuff
     return html.Div([
-        html.H3(f"{title} - Top {max_rows} by % Change", style={'color': 'white', 'marginTop': '20px'}),
+        html.H3(f"{title} - Top {max_rows} by % Change", style={'color': 'white', 'marginTop': '20px', 'marginleft': '20px', 'marginRight': '20px'}),
         html.Table([
             html.Thead(
                 html.Tr([html.Th(col, style={'color': 'white', 'border': '1px solid white'}) for col in pretty_names])
@@ -525,7 +547,7 @@ app.layout = html.Div([
     ]),
     html.Div(id='content-container'),
     dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
-], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '10px'})
+], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'}) # this bg color sets the color when loading initially
 
 
 # Define callback to update the graph
@@ -543,29 +565,23 @@ def update_content(selected_index, n):
 
     if selected_index == 'sp500':
         return html.Div([
-            dcc.Graph(figure=spx_fig, id='heatmap-graph'),
-            html.P(
-                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
-                style={'color': 'white', 'marginTop': '20px'}
-            )
+            dcc.Graph(figure=spx_fig, id='heatmap-graph', config={'responsive': True}),
+            BOTTOM_CAPTION
         ])
     elif selected_index == 'nasdaq':
         return html.Div([
-            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph'),
-            html.P(
-                "Note: Percent Change is calculated from the adjusted previous close to the last non-regular trade price (overnight trades included when available).",
-                style={'color': 'white', 'marginTop': '20px'}
-            )
+            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph', config={'responsive': True}),
+            BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_spx':
         return html.Div([
             generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0),
-            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}), # caption at bottom of page
+            BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_nasdaq':
         return html.Div([
             generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0),
-            html.P("Note: Percent Change is calculated as the change from the previous close to the last non-regular trade price (includes overnight trading if applicable).", style={'color': 'white'}), # caption at bottom of page
+            BOTTOM_CAPTION
         ])
 
 

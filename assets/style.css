@@ -1,46 +1,97 @@
-/* Make sure the entire app takes up the full screen and is scroll-free */
+/* Base reset */
 html, body {
     margin: 0;
     padding: 0;
-    overflow: yscroll;
+    overflow-y: scroll;
     height: 100%;
     width: 100%;
-    background-color: rgb(79, 79, 79);
     font-family: "Segoe UI", Roboto, sans-serif;
+    background-color: rgb(66, 73, 75); /* background of the bottom 10 pixels for some reason */
 }
 
-/* Ensure the root div stretches correctly */
+/* Root Dash app container */
 #_dash-app-content {
+    min-height: 100vh; /* Ensures the app takes at least full viewport height */
     height: 100%;
     width: 100%;
 }
 
-/* Center the H1 title and remove extra spacing */
+/* Title styling */
 h1 {
     text-align: center;
     margin: 0;
     padding: 15px 0;
     font-size: 2em;
-    color: #222;
-    background-color: "blue";
+    color: white;
+    background-color: rgb(66, 73, 75); 
 }
 
-/* Tweak the graph container */
+/* Graph container */
 #heatmap-graph {
-    width: 100vw !important;
-    height: 90vh !important; /* adjust based on H1 height */
-    padding: 0;
-    margin: 0;
+    width: 100% !important;
+    height: 90vh !important;
+    min-height: 400px;
     display: block;
 }
 
-/* For List View tab */
+/* Tabs styling (optional improvement for mobile appearance) */
+.dash-tabs {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+/* List view table styles */
 table {
     border-collapse: collapse;
     width: 100%;
+    background-color: rgb(68, 66, 75);
+    color: white;
 }
+
+thead {
+    background-color: rgb(79, 79, 79); /* darker header row */
+}
+
 th, td {
     border: 1px solid white;
     padding: 8px;
     text-align: left;
+    background-color: rgb(66, 73, 75); /* match container for visual consistency */
+}
+
+/* Ensure responsive layout for small screens */
+@media screen and (max-width: 768px) {
+    h1 {
+        font-size: 1.5em;
+        padding: 10px 0;
+    }
+
+    #heatmap-graph {
+        height: 70vh !important;
+        min-height: 300px;
+    }
+
+    th, td {
+        font-size: 0.9em;
+        padding: 6px;
+    }
+}
+
+/* Style all Dash tabs */
+.tab--selected, .tab {
+    font-size: 1rem;       /* default font size for desktop */
+    padding: 5px 10px;
+}
+
+/* Shrink tabs for smaller screens */
+@media screen and (max-width: 768px) {
+    .tab--selected, .tab {
+        font-size: 0.7rem;    /* reduce font size */
+        padding: 2px 4px;    /* reduce vertical/horizontal padding */
+    }
+
+    /* Optional: make tab labels stack vertically if necessary */
+    .dash-tabs {
+        flex-wrap: wrap;
+    }
 }
