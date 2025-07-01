@@ -60,6 +60,10 @@ BOTTOM_CAPTION = html.P([
            target="_blank", style={'color': 'lightblue'})
 ], style={'color': 'white', 'marginTop': '10px', 'fontSize': '12px', 'textAlign': 'center'})
 
+PAGE_TITLE = html.H1(
+    html.A("Overnight Stock Market Heat Map", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'}),
+    )
+
 
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
@@ -540,7 +544,7 @@ def generate_table(df, title, max_rows=30):
 
 # Set the layout of the app
 app.layout = html.Div([
-    html.H1("Overnight Stock Market Heat Map", style={'color': 'white'}),
+    PAGE_TITLE,
     dcc.Tabs(id="index-tabs", value='sp500', children=[
         dcc.Tab(label='S&P 500', value='sp500'),
         dcc.Tab(label='NASDAQ 100', value='nasdaq'),
