@@ -204,6 +204,10 @@ async def fetch_symbol_metrics(session, token, symbol):
         # Step 1: Get instrument ID
         instrument_id_url = f"https://api.robinhood.com/quotes/{symbol}/"
         id_data = await fetch_json(session, instrument_id_url, basic_headers)
+        if not id_data or 'instrument_id' not in id_data:
+            print(f"Skipping symbol {symbol} due to missing instrument_id.")
+            return None  # Skip this symbol if fetch_json failed
+
         instrument_id = id_data['instrument_id']
 
         # Step 2: Get market cap
@@ -471,10 +475,13 @@ def preload_figures(token):
                           "name", "symbol", "sector", "subsector"])
     spx_results = asyncio.run(fetch_all_symbols(
         spx_df['symbol'].tolist(), token))
-    spx_metrics_df = pd.DataFrame(spx_results, columns=["instrument_id", "market_cap", "volume", "average_volume",
+    # Filter out None results
+    valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
+    spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
                                                         "dollar_change", "percent_change", "last_trade_price",
                                                         "last_non_reg_price", "extended_hours_price",
                                                         "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    spx_df = spx_df.iloc[valid_indices].reset_index(drop=True)
     spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
     spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
     spx_fig = create_heat_map(spx_total_df, "S&P 500")
@@ -484,10 +491,12 @@ def preload_figures(token):
                              "name", "symbol", "sector", "subsector"])
     nasdaq_results = asyncio.run(fetch_all_symbols(
         nasdaq_df['symbol'].tolist(), token))
-    nasdaq_metrics_df = pd.DataFrame(nasdaq_results, columns=["instrument_id", "market_cap", "volume", "average_volume",
+    valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
+    nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
                                                               "dollar_change", "percent_change", "last_trade_price",
                                                               "last_non_reg_price", "extended_hours_price",
                                                               "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    nasdaq_df = nasdaq_df.iloc[valid_indices].reset_index(drop=True)
     nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
     nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")

@@ -178,7 +178,7 @@ async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIE
 async def fetch_symbol_metrics(session, token, symbol):
     try:
         basic_headers = {"User-Agent": "Mozilla/5.0"}
-        complex_headers = { # Taken from Network tab in Chrome DevTools; these are the headers that are required to get live quote data
+        complex_headers = {  # Taken from Network tab in Chrome DevTools; these are the headers that are required to get live quote data
             "authority": "bonfire.robinhood.com",
             "accept": "*/*",
             "accept-encoding": "gzip, deflate, br, zstd",
@@ -197,10 +197,14 @@ async def fetch_symbol_metrics(session, token, symbol):
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
             "x-hyper-ex": "enabled"
         }
-        
+
         # Step 1: Get instrument ID
         instrument_id_url = f"https://api.robinhood.com/quotes/{symbol}/"
         id_data = await fetch_json(session, instrument_id_url, basic_headers)
+        if not id_data or 'instrument_id' not in id_data:
+            print(f"Skipping symbol {symbol} due to missing instrument_id.")
+            return None  # Skip this symbol if fetch_json failed
+
         instrument_id = id_data['instrument_id']
 
         # Step 2: Get market cap
@@ -208,17 +212,18 @@ async def fetch_symbol_metrics(session, token, symbol):
         fundamental_data = await fetch_json(session, fundamental_data_url, basic_headers)
         market_cap = float(fundamental_data['market_cap'])
         volume = fundamental_data['volume']
-        average_volume = fundamental_data['average_volume'] # avg volume for last 2 weeks
-        
+        # avg volume for last 2 weeks
+        average_volume = fundamental_data['average_volume']
+
         # Step 3: Get latest quote
         quote_url = f"https://bonfire.robinhood.com/instruments/{instrument_id}/detail-page-live-updating-data/"
         quote_params = {
             "display_span": "day",
             "hide_extended_hours": "false"
         }
+
         data = await fetch_json(session, quote_url, complex_headers, quote_params)
         #print(data)
-        #print()
         #print(data['chart_section'])
         #exit(0)  # Debugging line to stop execution here
         
@@ -466,30 +471,39 @@ def preload_figures(token):
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
 
-    #Debug
+    # Debug
     if not token:
         print("❌ Bearer token was None — likely token fetch failure.")
     else:
         print("✅ Bearer token successfully retrieved")
-        
+
     # S&P 500
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
-    spx_results = asyncio.run(fetch_all_symbols(spx_df['symbol'].tolist(), token))
-    spx_metrics_df = pd.DataFrame(spx_results, columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                         "dollar_change", "percent_change", "last_trade_price",
-                                                         "last_non_reg_price", "extended_hours_price",
-                                                         "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
+                          "name", "symbol", "sector", "subsector"])
+    spx_results = asyncio.run(fetch_all_symbols(
+        spx_df['symbol'].tolist(), token))
+    # Filter out None results
+    valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
+    spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
+                                                        "dollar_change", "percent_change", "last_trade_price",
+                                                        "last_non_reg_price", "extended_hours_price",
+                                                        "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    spx_df = spx_df.iloc[valid_indices].reset_index(drop=True)
     spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
     spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
     spx_fig = create_heat_map(spx_total_df, "S&P 500")
 
     # NASDAQ
-    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
-    nasdaq_results = asyncio.run(fetch_all_symbols(nasdaq_df['symbol'].tolist(), token))
-    nasdaq_metrics_df = pd.DataFrame(nasdaq_results, columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                               "dollar_change", "percent_change", "last_trade_price",
-                                                               "last_non_reg_price", "extended_hours_price",
-                                                               "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
+                             "name", "symbol", "sector", "subsector"])
+    nasdaq_results = asyncio.run(fetch_all_symbols(
+        nasdaq_df['symbol'].tolist(), token))
+    valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
+    nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
+                                                              "dollar_change", "percent_change", "last_trade_price",
+                                                              "last_non_reg_price", "extended_hours_price",
+                                                              "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    nasdaq_df = nasdaq_df.iloc[valid_indices].reset_index(drop=True)
     nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
     nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
