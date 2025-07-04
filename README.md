@@ -4,6 +4,7 @@
 
 To do list *not a priority right now, but will work on it:
 - add basic db to track # of unique visits
+- make it such that refreshes do not occur if market is closed (i.e. weekends)
 - ~~fix scaling so figures can actually render on mobile~~ ✅
 - add auto-start on boot / auto-restart on crash (via systemd; currently using tmux + manual reboots if something goes wrong)
 - optimize w/ local memory caching by serving pre-rendered Static HTML (pre-generating the Plotly heatmap as a standalone HTML file every 5 minutes; then serve that file statically using a web server or object store, probably GCS)
