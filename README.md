@@ -10,6 +10,10 @@ To do list *not a priority right now, but will work on it:
 - optimize w/ local memory caching by serving pre-rendered Static HTML (pre-generating the Plotly heatmap as a standalone HTML file every 5 minutes; then serve that file statically using a web server or object store, probably GCS)
 - add logging for GCP (so can view logs without having to SSH in)
 
+Note that:
+main.py is the version running in GCP
+my_app.py is used for local testing before updating that ^ version
+
 Some samples of what this looks like (these may be outdated, but the general idea is there).
 
 ![image](https://github.com/user-attachments/assets/29f388d5-c883-4322-8f7a-cf39875b97ff)
