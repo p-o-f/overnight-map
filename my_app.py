@@ -41,6 +41,8 @@ spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
+current_token = None
+last_token_hour = None
 
 RUNNING_LOCALLY = True  # Set to False if running on a server
 BOTTOM_CAPTION = html.P([
@@ -475,7 +477,7 @@ def preload_figures(token):
     if not token:
         print("❌ Bearer token was None — likely token fetch failure.")
     else:
-        print("✅ Bearer token successfully retrieved")
+        print("✅ Bearer token is not none, proceeding with data fetch...")
 
     # S&P 500
     spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
@@ -576,9 +578,24 @@ app.layout = html.Div([
 def update_content(selected_index, n):
     ctx = callback_context
 
+    global current_token, last_token_hour
+
     if ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval':
-        token = get_robinhood_bearer_token()
-        preload_figures(token)
+        # Get current Eastern Time hour
+        ny_tz = pytz.timezone("America/New_York")
+        now = datetime.now(ny_tz)
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        
+        # Refresh token only if it's a new hour
+        if last_token_hour != current_hour:
+            print(f"🕒 New hour detected: {current_hour.strftime('%I:%M %p %Z')}. Refreshing token...")
+            current_token = get_robinhood_bearer_token()
+            last_token_hour = current_hour
+        else:
+            print(f"✅ Reusing existing token from {last_token_hour.strftime('%I:%M %p %Z')}.")
+
+        preload_figures(current_token)
+
 
     if selected_index == 'sp500':
         return html.Div([
@@ -603,6 +620,8 @@ def update_content(selected_index, n):
 
 
 if __name__ == "__main__":
-    token = get_robinhood_bearer_token()
-    preload_figures(token)  # preload both S&P 500 and Nasdaq heatmaps
+    ny_tz = pytz.timezone("America/New_York")
+    last_token_hour = datetime.now(ny_tz).replace(minute=0, second=0, microsecond=0)
+    current_token = get_robinhood_bearer_token()
+    preload_figures(current_token)
     app.run(debug=True)
