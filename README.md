@@ -11,8 +11,8 @@ To do list *not a priority right now, but will work on it:
 - add logging for GCP (so can view logs without having to SSH in)
 
 Note that:
-main.py is the version running in GCP
-my_app.py is used for local testing before updating that ^ version
+main.py is the version running in GCP... while
+my_app.py is used for local testing before updating that version
 
 Some samples of what this looks like (these may be outdated, but the general idea is there).
 
