@@ -41,8 +41,11 @@ spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
+
+'''
 current_token = None
 last_token_hour = None
+'''
 
 RUNNING_LOCALLY = True  # Set to False if running on a server
 BOTTOM_CAPTION = html.P([
@@ -82,6 +85,7 @@ def get_nasdaq_index_info():
 # print(get_nasdaq_index_info())  # Debugging line to check if the function works
 # exit()
 
+'''
 def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
     # Set up Chrome options for headless browsing
     chrome_options = Options()
@@ -161,7 +165,7 @@ def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
         # Always close the browser
         print("Closing browser...")
         driver.quit()
-
+'''
 
 async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIES):
     for attempt in range(retries):
@@ -177,7 +181,8 @@ async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIE
     return None #TODO <-- fix this line later to do something more useful
 
 
-async def fetch_symbol_metrics(session, token, symbol):
+#async def fetch_symbol_metrics(session, token, symbol):
+async def fetch_symbol_metrics(session, symbol):
     try:
         basic_headers = {"User-Agent": "Mozilla/5.0"}
         complex_headers = {  # Taken from Network tab in Chrome DevTools; these are the headers that are required to get live quote data
@@ -185,7 +190,7 @@ async def fetch_symbol_metrics(session, token, symbol):
             "accept": "*/*",
             "accept-encoding": "gzip, deflate, br, zstd",
             "accept-language": "en-US,en;q=0.9",
-            "authorization": f"Bearer {token}",
+            #"authorization": f"Bearer {token}",
             "dnt": "1",
             "origin": "https://robinhood.com",
             "priority": "u=1, i",
@@ -262,7 +267,7 @@ async def fetch_symbol_metrics(session, token, symbol):
     except Exception as e:
         print(f"Error fetching instrument ID for {symbol}: {e}")
 
-
+'''
 async def fetch_symbol_metrics_limited(session, token, symbol):
     sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
     async with sem:
@@ -278,7 +283,23 @@ async def fetch_all_symbols(symbols, token):
         results = await asyncio.gather(*tasks)
 
     return results
+'''
 
+async def fetch_symbol_metrics_limited(session, symbol):
+    sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
+    async with sem:
+        # This will limit the number of concurrent requests to CONCURRENT_REQUESTS
+        return await fetch_symbol_metrics(session, symbol)
+
+
+async def fetch_all_symbols(symbols):
+    connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        # Create a list of tasks for each symbol
+        tasks = [fetch_symbol_metrics_limited(session, symbol) for symbol in symbols]
+        results = await asyncio.gather(*tasks)
+
+    return results
 
 def create_heat_map(dataframe, map_title):    
     palette = {
@@ -468,7 +489,7 @@ def create_heat_map(dataframe, map_title):
     print("Fig created for " + map_title)
     return fig
 
-
+'''
 def preload_figures(token):
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
@@ -509,8 +530,46 @@ def preload_figures(token):
     nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
     nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
+'''
+
+def preload_figures():
+    global spx_fig, nasdaq_fig
+    global spx_total_df, nasdaq_total_df
 
 
+
+    # S&P 500
+    spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
+                          "name", "symbol", "sector", "subsector"])
+    spx_results = asyncio.run(fetch_all_symbols(
+        spx_df['symbol'].tolist()))
+    # Filter out None results
+    valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
+    spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
+                                                        "dollar_change", "percent_change", "last_trade_price",
+                                                        "last_non_reg_price", "extended_hours_price",
+                                                        "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    spx_df = spx_df.iloc[valid_indices].reset_index(drop=True)
+    spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
+    spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
+    spx_fig = create_heat_map(spx_total_df, "S&P 500")
+
+    # NASDAQ
+    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
+                             "name", "symbol", "sector", "subsector"])
+    nasdaq_results = asyncio.run(fetch_all_symbols(
+        nasdaq_df['symbol'].tolist()))
+    valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
+    nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
+                                                              "dollar_change", "percent_change", "last_trade_price",
+                                                              "last_non_reg_price", "extended_hours_price",
+                                                              "previous_close_price", "adjusted_previous_close_price", "overnight"])
+    nasdaq_df = nasdaq_df.iloc[valid_indices].reset_index(drop=True)
+    nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
+    nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
+    nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
+    
+    
 def generate_table(df, title, max_rows=30):
     df_sorted = df.sort_values(by="percent_change", ascending=False)
 
@@ -578,7 +637,7 @@ app.layout = html.Div([
 def update_content(selected_index, n):
     ctx = callback_context
 
-    global current_token, last_token_hour
+    # global current_token, last_token_hour
 
     if ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval':
         # Get current Eastern Time hour
@@ -586,6 +645,7 @@ def update_content(selected_index, n):
         now = datetime.now(ny_tz)
         current_hour = now.replace(minute=0, second=0, microsecond=0)
         
+        '''
         # Refresh token only if it's a new hour
         if last_token_hour != current_hour:
             print(f"🕒 New hour detected: {current_hour.strftime('%I:%M %p %Z')}. Refreshing token...")
@@ -593,8 +653,8 @@ def update_content(selected_index, n):
             last_token_hour = current_hour
         else:
             print(f"✅ Reusing existing token from {last_token_hour.strftime('%I:%M %p %Z')}.")
-
-        preload_figures(current_token)
+        '''
+        preload_figures()
 
 
     if selected_index == 'sp500':
@@ -621,7 +681,13 @@ def update_content(selected_index, n):
 
 if __name__ == "__main__":
     ny_tz = pytz.timezone("America/New_York")
-    last_token_hour = datetime.now(ny_tz).replace(minute=0, second=0, microsecond=0)
-    current_token = get_robinhood_bearer_token()
+    # last_token_hour = datetime.now(ny_tz).replace(minute=0, second=0, microsecond=0)
+
+    '''
+    current_token = "get_robinhood_bearer_token()"
     preload_figures(current_token)
+    '''
+    
+    preload_figures()
+    
     app.run(debug=True)

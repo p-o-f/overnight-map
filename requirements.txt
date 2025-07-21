@@ -1,5 +1,5 @@
-dash>=2.14.0
-plotly>=5.17.0
+dash
+plotly
 pandas>=2.1.0
 numpy>=1.26.0
 pytz>=2023.3
