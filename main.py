@@ -7,18 +7,11 @@ import numpy as np
 from datetime import datetime
 import pytz
 
-
-# Selenium
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager  # auto-manage ChromeDriver
-
 # Plotly
 import plotly.graph_objects as go
 import plotly.express as px
 import dash
-from dash import dcc, html
+from dash import ctx, dcc, html
 from dash.dependencies import Input, Output
 from dash import callback_context
 from dash import dash_table
@@ -44,14 +37,11 @@ app = dash.Dash(
 )
 server = app.server  # This is for Gunicorn to use
 
-# Global constants for Dash
+# Global constants
 spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
-last_token = None  # To save on Chrome startup time, we will only fetch the token once every TOKEN_REFRESH_SECONDS seconds
-last_token_time = 0
-TOKEN_REFRESH_SECONDS = 1200  # 20 mins
 
 BOTTOM_CAPTION = html.P([
     "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
@@ -89,82 +79,6 @@ def get_nasdaq_index_info():
     return stock_attributes
 
 
-def get_robinhood_bearer_token(timeout=2):  # Below 1 second does not work
-    # Set up Chrome options for headless browsing
-    chrome_options = Options()
-    chrome_options.binary_location = "/usr/bin/chromium-browser"
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=640,360")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    # Speed optimizations
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-default-apps")
-    chrome_options.add_argument("--disable-popup-blocking")
-    chrome_options.add_argument(
-        "--blink-settings=imagesEnabled=false")  # Disable images
-    chrome_options.add_argument("--disable-notifications")
-    chrome_options.add_argument("--disable-infobars")
-
-    # Add user agent to mimic a real browser
-    chrome_options.add_argument(
-        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
-
-    # Enable logging for network requests
-    chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-
-    # Set page load strategy to 'eager' to proceed as soon as the DOM is ready
-    chrome_options.page_load_strategy = 'eager'
-
-    print("Starting Chrome in headless mode...")
-    service = Service("/usr/bin/chromedriver")
-    driver = webdriver.Chrome(options=chrome_options)
-
-    try:
-        # Navigate to any specific stock page
-        print("Navigating to S&P 500 ETF page...")
-        driver.get("https://robinhood.com/stocks/SPY")
-
-        time.sleep(timeout)  # Wait for page to load
-
-        # Extract bearer token from network logs
-        print("Extracting bearer token from network requests...")
-        bearer_token = None
-
-        logs = driver.get_log('performance')
-        for log in logs:
-            network_log = json.loads(log['message'])
-
-            # Look for network requests
-            if ('message' in network_log and
-                'method' in network_log['message'] and
-                    network_log['message']['method'] == 'Network.requestWillBeSent'):
-
-                request = network_log['message']['params']
-
-                # Check if this request has authorization headers
-                if ('request' in request and
-                    'headers' in request['request'] and
-                        'Authorization' in request['request']['headers']):
-
-                    auth_header = request['request']['headers']['Authorization']
-                    if auth_header.startswith('Bearer '):
-                        bearer_token = auth_header.replace('Bearer ', '')
-                        print("Bearer token found!")
-                        break
-        if not bearer_token:
-            print("⚠️ Failed to extract bearer token from Chrome logs")
-            return None
-
-        return bearer_token
-
-    finally:
-        # Always close the browser
-        print("Closing browser...")
-        driver.quit()
-
-
 async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIES):
     for attempt in range(retries):
         try:
@@ -179,7 +93,7 @@ async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIE
     return None  # TODO <-- fix this line later to do something more useful
 
 
-async def fetch_symbol_metrics(session, token, symbol):
+async def fetch_symbol_metrics(session, symbol):
     try:
         basic_headers = {"User-Agent": "Mozilla/5.0"}
         complex_headers = {  # Taken from Network tab in Chrome DevTools; these are the headers that are required to get live quote data
@@ -187,7 +101,7 @@ async def fetch_symbol_metrics(session, token, symbol):
             "accept": "*/*",
             "accept-encoding": "gzip, deflate, br, zstd",
             "accept-language": "en-US,en;q=0.9",
-            "authorization": f"Bearer {token}",
+            #"authorization": f"Bearer {token}", obsolete, endpoint does not require auth anymore
             "dnt": "1",
             "origin": "https://robinhood.com",
             "priority": "u=1, i",
@@ -246,19 +160,19 @@ async def fetch_symbol_metrics(session, token, symbol):
         print(f"Error fetching instrument ID for {symbol}: {e}")
 
 
-async def fetch_symbol_metrics_limited(session, token, symbol):
+async def fetch_symbol_metrics_limited(session, symbol):
     sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
     async with sem:
         # This will limit the number of concurrent requests to CONCURRENT_REQUESTS
-        return await fetch_symbol_metrics(session, token, symbol)
+        return await fetch_symbol_metrics(session, symbol)
 
 
-async def fetch_all_symbols(symbols, token):
+async def fetch_all_symbols(symbols):
     connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession(connector=connector) as session:
         # Create a list of tasks for each symbol
         tasks = [fetch_symbol_metrics_limited(
-            session, token, symbol) for symbol in symbols]
+            session, symbol) for symbol in symbols]
         results = await asyncio.gather(*tasks)
 
     return results
@@ -461,21 +375,15 @@ def create_heat_map(dataframe, map_title):
     return fig
 
 
-def preload_figures(token):
+def preload_figures():
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
-
-    # Debug
-    if not token:
-        print("❌ Bearer token was None — likely token fetch failure.")
-    else:
-        print("✅ Bearer token successfully retrieved")
 
     # S&P 500
     spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
                           "name", "symbol", "sector", "subsector"])
     spx_results = asyncio.run(fetch_all_symbols(
-        spx_df['symbol'].tolist(), token))
+        spx_df['symbol'].tolist()))
     # Filter out None results
     valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
     spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
@@ -491,7 +399,7 @@ def preload_figures(token):
     nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
                              "name", "symbol", "sector", "subsector"])
     nasdaq_results = asyncio.run(fetch_all_symbols(
-        nasdaq_df['symbol'].tolist(), token))
+        nasdaq_df['symbol'].tolist()))
     valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
     nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
                                                               "dollar_change", "percent_change", "last_trade_price",
@@ -562,14 +470,12 @@ app.layout = html.Div([
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
     ]),
     html.Div(id='content-container'),
-    dcc.Interval(id='refresh-interval', interval=5 *
-                 60 * 1000, n_intervals=0),  # 5 minutes
+    dcc.Interval(id='refresh-interval', interval=2 * 60 * 1000, n_intervals=0),  # 2 minutes
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'}) # this bg color sets the color when loading initially
 
 # Title for tab name; Favicon for browser tab
 app.title = "PF's 24/5 Stock Map"
 app._favicon = ("assets/icon.ico")
-
 
 # Define callback to update the graph
 @app.callback(
@@ -578,19 +484,12 @@ app._favicon = ("assets/icon.ico")
     Input('refresh-interval', 'n_intervals')
 )
 def update_content(selected_index, n):
-    global last_token, last_token_time
 
     ctx = callback_context
     print("Callback was triggered by:", ctx.triggered)
-
-    now = time.time()
-    if now - last_token_time > TOKEN_REFRESH_SECONDS:
-        print("🔁 Refreshing token and figures...")
-        last_token = get_robinhood_bearer_token()
-        preload_figures(last_token)
-        last_token_time = now
-    else:
-        print("✅ Using cached figures")
+    if (ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval') or (ctx.triggered[0]['prop_id'] == '.'): # 1st part means that the refresh interval was triggered, 2nd part means that the page was just loaded for first time
+        print("Refreshing figures due to interval trigger")
+        preload_figures() 
 
     if selected_index == 'sp500':
         return html.Div([
@@ -616,18 +515,6 @@ def update_content(selected_index, n):
         ])
 
 
-# Do this at global level for gunicorn to pick up
-last_token = get_robinhood_bearer_token()
-while last_token is None:
-    print("❌ Failed to get bearer token, retrying...")
-    time.sleep(1)
-    last_token = get_robinhood_bearer_token()
-
-print("Bearer token retrieved successfully, preloading figures...")
-
-preload_figures(last_token)  # preload both S&P 500 and Nasdaq heatmaps
-last_token_time = time.time()  # Set initial token time
-
-
 if __name__ == "__main__":
+    preload_figures()
     app.run(debug=False, host="0.0.0.0", port=8080)

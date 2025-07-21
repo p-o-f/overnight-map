@@ -625,7 +625,7 @@ app.layout = html.Div([
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
     ]),
     html.Div(id='content-container'),
-    dcc.Interval(id='refresh-interval', interval=5 * 60 * 1000, n_intervals=0),  # 5 minutes
+    dcc.Interval(id='refresh-interval', interval=2 * 60 * 1000, n_intervals=0),  # 2 minutes
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'}) # this bg color sets the color when loading initially
 
 # Define callback to update the graph
