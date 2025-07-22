@@ -16,6 +16,7 @@ from dash.dependencies import Input, Output
 from dash import callback_context
 from dash import dash_table
 import dash_bootstrap_components as dbc
+from dash.dependencies import Input, Output, State
 
 # Performance optimizations
 import functools
@@ -26,6 +27,7 @@ import random
 # Constants for async requests
 MAX_RETRIES = 3  # Arbitrary number of retries for failed requests
 CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
+FIRST_LOAD = True  # Flag to indicate if this is the first load of the app
 
 # Initialize Dash app
 # app = dash.Dash(__name__)
@@ -52,8 +54,9 @@ BOTTOM_CAPTION = html.P([
 ], style={'color': 'white', 'marginTop': '10px', 'fontSize': '12px', 'textAlign': 'center'})
 
 PAGE_TITLE = html.H1(
-    html.A("Overnight Stock Market Heat Map", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'}),
-    )
+    html.A("Overnight Stock Market Heat Map", href="https://buymeacoffee.com/pfdev",
+           target="_blank", style={'color': 'lightblue'}),
+)
 
 
 def get_sp500_index_info():
@@ -101,7 +104,7 @@ async def fetch_symbol_metrics(session, symbol):
             "accept": "*/*",
             "accept-encoding": "gzip, deflate, br, zstd",
             "accept-language": "en-US,en;q=0.9",
-            #"authorization": f"Bearer {token}", obsolete, endpoint does not require auth anymore
+            # "authorization": f"Bearer {token}", obsolete, endpoint does not require auth anymore
             "dnt": "1",
             "origin": "https://robinhood.com",
             "priority": "u=1, i",
@@ -328,7 +331,7 @@ def create_heat_map(dataframe, map_title):
         coloraxis_colorbar=dict(
             title="% Change",
             thicknessmode="pixels",
-            thickness=16, 
+            thickness=16,
             lenmode="fraction",
             len=0.5,        # 50% width
             yanchor="bottom",
@@ -387,9 +390,9 @@ def preload_figures():
     # Filter out None results
     valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
     spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                        "dollar_change", "percent_change", "last_trade_price",
-                                                        "last_non_reg_price", "extended_hours_price",
-                                                        "previous_close_price", "adjusted_previous_close_price", "overnight"])
+                                                                                      "dollar_change", "percent_change", "last_trade_price",
+                                                                                      "last_non_reg_price", "extended_hours_price",
+                                                                                      "previous_close_price", "adjusted_previous_close_price", "overnight"])
     spx_df = spx_df.iloc[valid_indices].reset_index(drop=True)
     spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
     spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
@@ -402,9 +405,9 @@ def preload_figures():
         nasdaq_df['symbol'].tolist()))
     valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
     nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                              "dollar_change", "percent_change", "last_trade_price",
-                                                              "last_non_reg_price", "extended_hours_price",
-                                                              "previous_close_price", "adjusted_previous_close_price", "overnight"])
+                                                                                            "dollar_change", "percent_change", "last_trade_price",
+                                                                                            "last_non_reg_price", "extended_hours_price",
+                                                                                            "previous_close_price", "adjusted_previous_close_price", "overnight"])
     nasdaq_df = nasdaq_df.iloc[valid_indices].reset_index(drop=True)
     nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
     nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
@@ -469,50 +472,88 @@ app.layout = html.Div([
         dcc.Tab(label='List View S&P 500', value='listview_spx'),
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
     ]),
+    dcc.Store(id='spx-store', data=None),  # Store for SPX figure
+    dcc.Store(id='nasdaq-store', data=None),  # Store for NASDAQ figure
     html.Div(id='content-container'),
-    dcc.Interval(id='refresh-interval', interval=2 * 60 * 1000, n_intervals=0),  # 2 minutes
-], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'}) # this bg color sets the color when loading initially
+    dcc.Interval(id='refresh-interval', interval=5 *
+                 60 * 1000, n_intervals=0),  # 5 minutes
+    # this bg color sets the color when loading initially
+], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'})
 
 # Title for tab name; Favicon for browser tab
 app.title = "PF's 24/5 Stock Map"
 app._favicon = ("assets/icon.ico")
 
-# Define callback to update the graph
+# This callback updates the store with the new figures
+
+
+@app.callback(
+    Output('spx-store', 'data'),
+    Output('nasdaq-store', 'data'),
+    Input('refresh-interval', 'n_intervals')
+)
+def update_figures(n):
+    global FIRST_LOAD
+    ctx = callback_context
+    print("Callback in update_figures was triggered by:", ctx.triggered)
+    # 1st part means that the refresh interval was triggered, 2nd part means that the page was just loaded for first time
+    if (ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval') or (ctx.triggered[0]['prop_id'] == '.' and FIRST_LOAD):
+        if FIRST_LOAD:
+            print("This is the first load of the app, so we will preload the figures...")
+        FIRST_LOAD = False  # Set to False after first load; this prevents, for example, 2x users loading the website and triggering the callback unnecessarily
+        print("Calling update_figures()" + "\n")
+        preload_figures()
+    else:
+        print("NOT calling update_figures() because it was triggered by another device loading the page/initial page load" + "\n")
+    # Return new figures to store or the same ones if they haven't changed
+    return spx_fig, nasdaq_fig
+
+# Callback to render UI from store
+
+
 @app.callback(
     Output('content-container', 'children'),
     Input('index-tabs', 'value'),
-    Input('refresh-interval', 'n_intervals')
+    State('spx-store', 'data'),
+    State('nasdaq-store', 'data')
 )
-def update_content(selected_index, n):
-
+def render_content(selected_index, spx_fig_data, nasdaq_fig_data):
     ctx = callback_context
-    print("Callback was triggered by:", ctx.triggered)
-    if (ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval') or (ctx.triggered[0]['prop_id'] == '.'): # 1st part means that the refresh interval was triggered, 2nd part means that the page was just loaded for first time
-        print("Refreshing figures due to interval trigger")
-        preload_figures() 
-
-    if selected_index == 'sp500':
-        return html.Div([
-            dcc.Graph(figure=spx_fig, id='heatmap-graph', config={'responsive': True}),
-            BOTTOM_CAPTION
-        ])
-    elif selected_index == 'nasdaq':
-        return html.Div([
-            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph', config={'responsive': True}),
-            BOTTOM_CAPTION
-        ])
-    elif selected_index == 'listview_spx':
-        return html.Div([
-            generate_table(spx_total_df, "S&P 500", len(
-                spx_total_df) if spx_total_df is not None else 0),
-            BOTTOM_CAPTION
-        ])
-    elif selected_index == 'listview_nasdaq':
-        return html.Div([
-            generate_table(nasdaq_total_df, "NASDAQ 100", len(
-                nasdaq_total_df) if nasdaq_total_df is not None else 0),
-            BOTTOM_CAPTION
-        ])
+    print("Callback in render_content was triggered by:", ctx.triggered)
+    # don't re-render if another device starts to load the page
+    if (ctx.triggered and ctx.triggered[0]['prop_id'] != '.'):
+        print("Calling render_content() with selected_index:",
+              selected_index + "\n")
+        if selected_index == 'sp500':
+            return html.Div([
+                dcc.Loading(children=[  # Show loading spinner while figure is loading
+                    dcc.Graph(figure=spx_fig_data, id='heatmap-graph',
+                              config={'responsive': True})
+                ], type="circle", color="#119DFF"),
+                BOTTOM_CAPTION
+            ])
+        elif selected_index == 'nasdaq':
+            return html.Div([
+                dcc.Loading(children=[
+                    dcc.Graph(figure=nasdaq_fig_data,
+                              id='heatmap-graph', config={'responsive': True})
+                ], type="circle", color="#119DFF"),
+                BOTTOM_CAPTION
+            ])
+        elif selected_index == 'listview_spx':
+            return html.Div([
+                generate_table(spx_total_df, "S&P 500", len(
+                    spx_total_df) if spx_total_df is not None else 0),
+                BOTTOM_CAPTION
+            ])
+        elif selected_index == 'listview_nasdaq':
+            return html.Div([
+                generate_table(nasdaq_total_df, "NASDAQ 100", len(
+                    nasdaq_total_df) if nasdaq_total_df is not None else 0),
+                BOTTOM_CAPTION
+            ])
+    else:
+        print("NOT calling render_content() because it was triggered by another device loading the page/initial page load" + "\n")
 
 
 if __name__ == "__main__":
