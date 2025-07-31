@@ -1,10 +1,8 @@
-import time
 import requests
 import pandas as pd
-import re
-import json
 import numpy as np
 from datetime import datetime
+import time
 import pytz
 
 # Plotly
@@ -19,10 +17,8 @@ import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 
 # Performance optimizations
-import functools
 import asyncio
 import aiohttp
-import random
 
 # Constants for async requests
 MAX_RETRIES = 3  # Arbitrary number of retries for failed requests
@@ -44,6 +40,8 @@ spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
+spx_table = None
+nasdaq_table = None
 
 BOTTOM_CAPTION = html.P([
     "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
@@ -57,6 +55,27 @@ PAGE_TITLE = html.H1(
     html.A("Overnight Stock Market Heat Map", href="https://buymeacoffee.com/pfdev",
            target="_blank", style={'color': 'lightblue'}),
 )
+
+ny_tz = pytz.timezone("America/New_York")
+
+
+def skipRefreshDueToWeekend():
+    now = datetime.now(ny_tz)
+
+    weekday = now.weekday()  # Monday is 0, Sunday is 6
+    current_time = now.time()
+
+    # RH non 24-5 trading happens from Friday 8:00 PM until Sunday 5:00 PM
+    if weekday == 4:  # Friday
+        if current_time > time(20, 0):  # later than 8:00 PM on Friday
+            return True
+    elif weekday in [5]:  # Saturday
+        return True
+    elif weekday == 6:  # Sunday
+        if current_time < time(17, 0):  # before 5:00 PM on Sunday
+            return True
+
+    return False
 
 
 def get_sp500_index_info():
@@ -93,6 +112,7 @@ async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIE
         except Exception as e:
             print(f"Attempt {attempt+1} failed for {url}: {e}")
         await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
+    print(f"❌ Final failure for URL: {url}")
     return None  # TODO <-- fix this line later to do something more useful
 
 
@@ -163,19 +183,18 @@ async def fetch_symbol_metrics(session, symbol):
         print(f"Error fetching instrument ID for {symbol}: {e}")
 
 
-async def fetch_symbol_metrics_limited(session, symbol):
-    sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
+async def fetch_symbol_metrics_limited(session, symbol, sem):
     async with sem:
-        # This will limit the number of concurrent requests to CONCURRENT_REQUESTS
         return await fetch_symbol_metrics(session, symbol)
 
 
 async def fetch_all_symbols(symbols):
     connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
+    sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession(connector=connector) as session:
         # Create a list of tasks for each symbol
         tasks = [fetch_symbol_metrics_limited(
-            session, symbol) for symbol in symbols]
+            session, symbol, sem) for symbol in symbols]
         results = await asyncio.gather(*tasks)
 
     return results
@@ -202,22 +221,19 @@ def create_heat_map(dataframe, map_title):
         dataframe['market_cap'], power)
 
     # Create formatted label with percent change
-    dataframe['symbol_with_change'] = dataframe.apply(
-        lambda row: f"<span style='font-size: larger; color: white;'>{row['symbol']}</span><br><span style='color: white;'>{row['percent_change']:+.2f}%</span>",
-        axis=1
+    dataframe['symbol_with_change'] = (
+        "<span style='font-size: larger; color: white;'>" +
+        dataframe['symbol'] + "</span><br>"
+        "<span style='color: white;'>" +
+        dataframe['percent_change'].map("{:+.2f}%".format) + "</span>"
     )
 
-    overnight_on = dataframe['overnight'].value_counts().iloc[0]
-    try:
-        # If there is no overnight trading data, this will raise an IndexError
-        overnight_off = dataframe['overnight'].value_counts().iloc[1]
-    except IndexError:
-        # If there is no overnight trading data, set overnight_off to 0
-        overnight_off = 0
+    counts = dataframe['overnight'].value_counts()
+    overnight_on = counts.get(True, 0)
+    overnight_off = counts.get(False, 0)
+
     print(f"{map_title}\nOvernight on: {overnight_on}, Overnight off: {overnight_off}")
 
-    # New York timezone
-    ny_tz = pytz.timezone("America/New_York")
     # Current time in New York
     ny_time = datetime.now(ny_tz)
     # Format like "5/13/2025, 6:14 AM, EST"
@@ -374,44 +390,76 @@ def create_heat_map(dataframe, map_title):
         margin=dict(l=30, r=30, t=30, b=0),  # Remove margins
     )
 
-    print("Fig created for " + map_title)
+    print("Fig created for " + map_title + "\n")
     return fig
 
 
-def preload_figures():
+def load_figures():
+    start = time.time()
+
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
+    global spx_table, nasdaq_table
 
-    # S&P 500
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
-                          "name", "symbol", "sector", "subsector"])
-    spx_results = asyncio.run(fetch_all_symbols(
-        spx_df['symbol'].tolist()))
-    # Filter out None results
-    valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
-    spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                                                      "dollar_change", "percent_change", "last_trade_price",
-                                                                                      "last_non_reg_price", "extended_hours_price",
-                                                                                      "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    spx_df = spx_df.iloc[valid_indices].reset_index(drop=True)
-    spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
-    spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
+    async def load_both_indices():
+        # Fetch index metadata (blocking)
+        spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
+                              "name", "symbol", "sector", "subsector"])
+        nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
+                                 "name", "symbol", "sector", "subsector"])
+
+        # Run both fetches concurrently
+        spx_task = fetch_all_symbols(spx_df['symbol'].tolist())
+        nasdaq_task = fetch_all_symbols(nasdaq_df['symbol'].tolist())
+        spx_results, nasdaq_results = await asyncio.gather(spx_task, nasdaq_task)
+
+        column_names = [
+            "instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change",
+            "last_trade_price", "last_non_reg_price", "extended_hours_price", "previous_close_price",
+            "adjusted_previous_close_price", "overnight"
+        ]
+        # --- Process S&P 500 ---
+        spx_valid_data = [(i, r)
+                          for i, r in enumerate(spx_results) if r is not None]
+        spx_valid_indices, spx_metrics = zip(
+            *spx_valid_data) if spx_valid_data else ([], [])
+        spx_metrics_df = pd.DataFrame(spx_metrics, columns=column_names)
+        spx_df_valid = spx_df.iloc[list(
+            spx_valid_indices)].reset_index(drop=True)
+
+        spx_total = pd.concat([spx_df_valid, spx_metrics_df], axis=1)
+        spx_total = spx_total[spx_total["symbol"] != "GOOGL"]
+        # ------------------------
+
+        # --- Process NASDAQ 100 ---
+        nasdaq_valid_data = [(i, r) for i, r in enumerate(
+            nasdaq_results) if r is not None]
+        nasdaq_valid_indices, nasdaq_metrics = zip(
+            *nasdaq_valid_data) if nasdaq_valid_data else ([], [])
+        nasdaq_metrics_df = pd.DataFrame(nasdaq_metrics, columns=column_names)
+        nasdaq_df_valid = nasdaq_df.iloc[list(
+            nasdaq_valid_indices)].reset_index(drop=True)
+
+        nasdaq_total = pd.concat([nasdaq_df_valid, nasdaq_metrics_df], axis=1)
+        nasdaq_total = nasdaq_total[nasdaq_total["symbol"] != "GOOGL"]
+        # ------------------------
+
+        # Store results to global state
+        return spx_total, nasdaq_total
+
+    # Run the async loader
+    spx_total_df, nasdaq_total_df = asyncio.run(load_both_indices())
+
+    # Build figures after data is loaded
     spx_fig = create_heat_map(spx_total_df, "S&P 500")
-
-    # NASDAQ
-    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
-                             "name", "symbol", "sector", "subsector"])
-    nasdaq_results = asyncio.run(fetch_all_symbols(
-        nasdaq_df['symbol'].tolist()))
-    valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
-    nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                                                            "dollar_change", "percent_change", "last_trade_price",
-                                                                                            "last_non_reg_price", "extended_hours_price",
-                                                                                            "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    nasdaq_df = nasdaq_df.iloc[valid_indices].reset_index(drop=True)
-    nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
-    nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
+
+    # Cache pre-rendered tables from df
+    spx_table = generate_table(spx_total_df, "S&P 500", len(
+        spx_total_df) if spx_total_df is not None else 0)
+    nasdaq_table = generate_table(nasdaq_total_df, "NASDAQ 100", len(
+        nasdaq_total_df) if nasdaq_total_df is not None else 0)
+    print(f"load_figures() took {time.time() - start:.2f} seconds")
 
 
 def generate_table(df, title, max_rows=30):
@@ -441,8 +489,8 @@ def generate_table(df, title, max_rows=30):
 
     # TODO can make this sortable by column later (optionally); also need to fix margins and aesthetic stuff
     return html.Div([
-        html.H3(f"{title} - Top {max_rows} by % Change",
-                style={'color': 'white', 'marginTop': '20px'}),
+        html.H3(f"{title} - Top {max_rows} by % Change", style={'color': 'white',
+                'marginTop': '20px', 'marginleft': '20px', 'marginRight': '20px'}),
         html.Table([
             html.Thead(
                 html.Tr([html.Th(col, style={
@@ -472,11 +520,19 @@ app.layout = html.Div([
         dcc.Tab(label='List View S&P 500', value='listview_spx'),
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
     ]),
-    dcc.Store(id='spx-store', data=None),  # Store for SPX figure
-    dcc.Store(id='nasdaq-store', data=None),  # Store for NASDAQ figure
     html.Div(id='content-container'),
-    dcc.Interval(id='refresh-interval', interval=5 *
-                 60 * 1000, n_intervals=0),  # 5 minutes
+
+    # Interval that only updates data (invisible)
+    dcc.Interval(id='data-refresh-interval', interval=14 *
+                 60 * 1000, n_intervals=0),  # 14 minutes
+
+    # Interval that triggers tab re-render
+    dcc.Interval(id='ui-refresh-interval', interval=15 *
+                 60 * 1000, n_intervals=0),  # 15 minutes
+
+    # Dummy div for triggering data refresh callback
+    html.Div(id='data-refresh-dummy', style={'display': 'none'})
+
     # this bg color sets the color when loading initially
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'})
 
@@ -484,78 +540,63 @@ app.layout = html.Div([
 app.title = "PF's 24/5 Stock Map"
 app._favicon = ("assets/icon.ico")
 
-# This callback updates the store with the new figures
+# Define callbacks to update the graph
 
 
-@app.callback(
-    Output('spx-store', 'data'),
-    Output('nasdaq-store', 'data'),
-    Input('refresh-interval', 'n_intervals')
+@app.callback(  # Every 14 mins
+    Output('data-refresh-dummy', 'children'),
+    Input('data-refresh-interval', 'n_intervals')
 )
-def update_figures(n):
-    global FIRST_LOAD
+def background_data_refresh(n):
     ctx = callback_context
-    print("Callback in update_figures was triggered by:", ctx.triggered)
-    # 1st part means that the refresh interval was triggered, 2nd part means that the page was just loaded for first time
-    if (ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval') or (ctx.triggered[0]['prop_id'] == '.' and FIRST_LOAD):
-        if FIRST_LOAD:
-            print("This is the first load of the app, so we will preload the figures...")
-        FIRST_LOAD = False  # Set to False after first load; this prevents, for example, 2x users loading the website and triggering the callback unnecessarily
-        print("Calling update_figures()" + "\n")
-        preload_figures()
+    print("Callback in background_data_refresh() was triggered by:", ctx.triggered)
+    print(f"🔄 Refreshing data at 14-minute interval (n={n})")
+    if not skipRefreshDueToWeekend():
+        print("It wasn't a weekend, so refresh is allowed... calling load_figures()")
+        load_figures()
     else:
-        print("NOT calling update_figures() because it was triggered by another device loading the page/initial page load" + "\n")
-    # Return new figures to store or the same ones if they haven't changed
-    return spx_fig, nasdaq_fig
-
-# Callback to render UI from store
+        print("It was a weekend, so refresh is not allowed")
+    print()
+    return f"Refreshed at {datetime.now()}"  # dummy output
 
 
-@app.callback(
+@app.callback(  # Every 15 mins
     Output('content-container', 'children'),
     Input('index-tabs', 'value'),
-    State('spx-store', 'data'),
-    State('nasdaq-store', 'data')
+    Input('ui-refresh-interval', 'n_intervals')
 )
-def render_content(selected_index, spx_fig_data, nasdaq_fig_data):
+def update_content(selected_index, n):
     ctx = callback_context
-    print("Callback in render_content was triggered by:", ctx.triggered)
-    # don't re-render if another device starts to load the page
-    if (ctx.triggered and ctx.triggered[0]['prop_id'] != '.'):
-        print("Calling render_content() with selected_index:",
-              selected_index + "\n")
-        if selected_index == 'sp500':
-            return html.Div([
-                dcc.Loading(children=[  # Show loading spinner while figure is loading
-                    dcc.Graph(figure=spx_fig_data, id='heatmap-graph',
-                              config={'responsive': True})
-                ], type="circle", color="#119DFF"),
-                BOTTOM_CAPTION
-            ])
-        elif selected_index == 'nasdaq':
-            return html.Div([
-                dcc.Loading(children=[
-                    dcc.Graph(figure=nasdaq_fig_data,
-                              id='heatmap-graph', config={'responsive': True})
-                ], type="circle", color="#119DFF"),
-                BOTTOM_CAPTION
-            ])
-        elif selected_index == 'listview_spx':
-            return html.Div([
-                generate_table(spx_total_df, "S&P 500", len(
-                    spx_total_df) if spx_total_df is not None else 0),
-                BOTTOM_CAPTION
-            ])
-        elif selected_index == 'listview_nasdaq':
-            return html.Div([
-                generate_table(nasdaq_total_df, "NASDAQ 100", len(
-                    nasdaq_total_df) if nasdaq_total_df is not None else 0),
-                BOTTOM_CAPTION
-            ])
-    else:
-        print("NOT calling render_content() because it was triggered by another device loading the page/initial page load" + "\n")
+    print("Callback in update_content() was triggered by:", ctx.triggered)
+    print(
+        f"Updating UI at 15-minute interval (aka without data refresh)... (n={n}), tab={selected_index}")
+    print()
+
+    if selected_index == 'sp500':
+        return html.Div([
+            dcc.Graph(figure=spx_fig, id='heatmap-graph',
+                      config={'responsive': True}),
+            BOTTOM_CAPTION
+        ])
+    elif selected_index == 'nasdaq':
+        return html.Div([
+            dcc.Graph(figure=nasdaq_fig, id='heatmap-graph',
+                      config={'responsive': True}),
+            BOTTOM_CAPTION
+        ])
+    elif selected_index == 'listview_spx':
+        return html.Div([
+            spx_table,
+            BOTTOM_CAPTION
+        ])
+    elif selected_index == 'listview_nasdaq':
+        return html.Div([
+            nasdaq_table,
+            BOTTOM_CAPTION
+        ])
 
 
 if __name__ == "__main__":
-    preload_figures()
+    print("Starting with intitial call to load_figures() upon first run...")
+    load_figures()
     app.run(debug=False, host="0.0.0.0", port=8080)

@@ -26,7 +26,7 @@ CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stabilit
 app = dash.Dash(__name__)
 server = app.server  # This is for Gunicorn to use
 
-# Global constants for Dash
+# Global constants
 spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
@@ -45,9 +45,10 @@ PAGE_TITLE = html.H1(
     html.A("Overnight Stock Market Heat Map", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'}),
     )
 
+ny_tz = pytz.timezone("America/New_York")
+
 
 def skipRefreshDueToWeekend():
-    ny_tz = pytz.timezone("America/New_York")
     now = datetime.now(ny_tz)
     
     weekday = now.weekday()  # Monday is 0, Sunday is 6
@@ -169,7 +170,6 @@ async def fetch_symbol_metrics(session, symbol):
 
 async def fetch_symbol_metrics_limited(session, symbol, sem):
     async with sem:
-        # This will limit the number of concurrent requests to CONCURRENT_REQUESTS
         return await fetch_symbol_metrics(session, symbol)
 
 
@@ -208,17 +208,19 @@ def create_heat_map(dataframe, map_title):
     "<span style='color: white;'>" + dataframe['percent_change'].map("{:+.2f}%".format) + "</span>"
         )
 
-    overnight_on = dataframe['overnight'].value_counts().iloc[0]
-    try:
-        # If there is no overnight trading data, this will raise an IndexError
-        overnight_off = dataframe['overnight'].value_counts().iloc[1]
-    except IndexError:
-        # If there is no overnight trading data, set overnight_off to 0
-        overnight_off = 0
+    # overnight_on = dataframe['overnight'].value_counts().iloc[0]
+    # try:
+    #     # If there is no overnight trading data, this will raise an IndexError
+    #     overnight_off = dataframe['overnight'].value_counts().iloc[1]
+    # except IndexError:
+    #     # If there is no overnight trading data, set overnight_off to 0
+    #     overnight_off = 0
+    counts = dataframe['overnight'].value_counts()
+    overnight_on = counts.get(True, 0)
+    overnight_off = counts.get(False, 0)
+
     print(f"{map_title}, Overnight on: {overnight_on}, Overnight off: {overnight_off}")
 
-    # New York timezone
-    ny_tz = pytz.timezone("America/New_York")
     # Current time in New York
     ny_time = datetime.now(ny_tz)
     # Format like "5/13/2025, 6:14 AM, EST"
@@ -549,7 +551,6 @@ def update_content(selected_index, n):
 
 
 if __name__ == "__main__":
-    ny_tz = pytz.timezone("America/New_York")
     print("Starting with intitial call to load_figures() upon first run...")
     load_figures()
     app.run(debug=True)
