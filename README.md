@@ -2,13 +2,13 @@
 
 [This](https://finviz.com/map.ashx), but with 24/5 data where applicable. Hosted on a Google Cloud VM (Compute Engine) instance.
 
-To do list *not a priority right now, but will work on it:
-- add basic db to track # of unique visits
-- make it such that refreshes do not occur if market is closed (i.e. weekends)
-- ~~fix scaling so figures can actually render on mobile~~ ✅
+To do list *not a priority right now, but will work on it over time:
+- add a basic db to track # of unique visits
 - add auto-start on boot / auto-restart on crash (via systemd; currently using tmux + manual reboots if something goes wrong)
-- optimize w/ local memory caching by serving pre-rendered Static HTML (pre-generating the Plotly heatmap as a standalone HTML file every 5 minutes; then serve that file statically using a web server or object store, probably GCS)
 - add logging for GCP (so can view logs without having to SSH in)
+- ~~make it such that refreshes do not occur if market is closed (i.e. weekends)~~ ✅ 
+- ~~fix scaling so figures can actually render on mobile~~ ✅
+- ~~optimize w/ local memory caching~~ ✅
 
 Note that:
 main.py is the version running in GCP... while
