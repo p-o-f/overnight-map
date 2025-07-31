@@ -26,7 +26,7 @@ import random
 
 # Constants for async requests
 MAX_RETRIES = 3  # Arbitrary number of retries for failed requests
-CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
+CONCURRENT_REQUESTS = 30  # Can be tuned higher/lower based on network stability
 FIRST_LOAD = True  # Flag to indicate if this is the first load of the app
 
 # Initialize Dash app

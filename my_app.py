@@ -1,17 +1,8 @@
-import time
 import requests
 import pandas as pd
-import re
-import json
 import numpy as np
-from datetime import datetime
+from datetime import datetime, time
 import pytz
-
-# Selenium 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager  # auto-manage ChromeDriver
 
 # Plotly 
 import plotly.graph_objects as go
@@ -23,10 +14,8 @@ from dash import callback_context
 from dash import dash_table
 
 # Performance optimizations
-import functools
 import asyncio
 import aiohttp
-import random
 
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
@@ -36,18 +25,12 @@ CONCURRENT_REQUESTS = 30  # Can be tuned higher/lower based on network stability
 app = dash.Dash(__name__)
 server = app.server  # This is for Gunicorn to use
 
-# Global cache for Dash
+# Global constants for Dash
 spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
 
-'''
-current_token = None
-last_token_hour = None
-'''
-
-RUNNING_LOCALLY = True  # Set to False if running on a server
 BOTTOM_CAPTION = html.P([
     "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
     "The provided data for should not be considered as any type of financial advice and may be inaccurate. ",
@@ -58,6 +41,26 @@ BOTTOM_CAPTION = html.P([
 PAGE_TITLE = html.H1(
     html.A("Overnight Stock Market Heat Map", href="https://buymeacoffee.com/pfdev", target="_blank", style={'color': 'lightblue'}),
     )
+
+
+def skipRefreshDueToWeekend():
+    ny_tz = pytz.timezone("America/New_York")
+    now = datetime.now(ny_tz)
+    
+    weekday = now.weekday()  # Monday is 0, Sunday is 6
+    current_time = now.time()
+    
+    # RH non 24-5 trading happens from Friday 8:00 PM until Sunday 5:00 PM 
+    if weekday == 4:  # Friday
+        if current_time > time(20, 0): # later than 8:00 PM on Friday
+            return True
+    elif weekday in [5]:  # Saturday
+        return True
+    elif weekday == 6:  # Sunday
+        if current_time < time(17, 0): # before 5:00 PM on Sunday
+            return True
+    
+    return False
 
 
 def get_sp500_index_info():
@@ -79,93 +82,6 @@ def get_nasdaq_index_info():
         stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Ticker symbol, formal name, sector, subsector FIXED HERE
     return stock_attributes
 
-# print(get_sp500_index_info())  # Debugging line to check if the function works
-# print()
-# print()
-# print(get_nasdaq_index_info())  # Debugging line to check if the function works
-# exit()
-
-'''
-def get_robinhood_bearer_token(timeout=2): # Below 1 second does not work
-    # Set up Chrome options for headless browsing
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=640,360")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    
-    # Speed optimizations
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-default-apps")
-    chrome_options.add_argument("--disable-popup-blocking")
-    chrome_options.add_argument("--blink-settings=imagesEnabled=false")  # Disable images
-    chrome_options.add_argument("--disable-notifications")
-    chrome_options.add_argument("--disable-infobars")
-    
-    # Add user agent to mimic a real browser
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
-    
-    # Enable logging for network requests
-    chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-    
-    # Set page load strategy to 'eager' to proceed as soon as the DOM is ready
-    chrome_options.page_load_strategy = 'eager'
-    
-    print("Starting Chrome in headless mode...")
-    if RUNNING_LOCALLY:
-        driver = webdriver.Chrome(options=chrome_options)
-        
-    else: # for deployment on Render.com
-        # Explicit Chrome binary path (installed by render-build.sh)
-        chrome_options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
-        
-        print("Starting Chrome in headless mode...")
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-
-    try:
-        # Navigate to any specific stock page
-        print("Navigating to S&P 500 ETF page...")
-        driver.get("https://robinhood.com/stocks/SPY")
-        
-        time.sleep(timeout)  # Wait for page to load
-        
-        # Extract bearer token from network logs
-        print("Extracting bearer token from network requests...")
-        bearer_token = None
-        
-        logs = driver.get_log('performance')
-        for log in logs:
-            network_log = json.loads(log['message'])
-            
-            # Look for network requests
-            if ('message' in network_log and 
-                'method' in network_log['message'] and 
-                network_log['message']['method'] == 'Network.requestWillBeSent'):
-                
-                request = network_log['message']['params']
-                
-                # Check if this request has authorization headers
-                if ('request' in request and 
-                    'headers' in request['request'] and 
-                    'Authorization' in request['request']['headers']):
-                    
-                    auth_header = request['request']['headers']['Authorization']
-                    if auth_header.startswith('Bearer '):
-                        bearer_token = auth_header.replace('Bearer ', '')
-                        print("Bearer token found!")
-                        break
-        if not bearer_token:
-            print("⚠️ Failed to extract bearer token from Chrome logs")
-            return None
-
-        return bearer_token
-        
-    finally:
-        # Always close the browser
-        print("Closing browser...")
-        driver.quit()
-'''
 
 async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIES):
     for attempt in range(retries):
@@ -181,7 +97,6 @@ async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIE
     return None #TODO <-- fix this line later to do something more useful
 
 
-#async def fetch_symbol_metrics(session, token, symbol):
 async def fetch_symbol_metrics(session, symbol):
     try:
         basic_headers = {"User-Agent": "Mozilla/5.0"}
@@ -230,14 +145,9 @@ async def fetch_symbol_metrics(session, symbol):
         }
 
         data = await fetch_json(session, quote_url, complex_headers, quote_params)
-        #print(data)
-        #print(data['chart_section'])
-        #exit(0)  # Debugging line to stop execution here
-        
 
-####LOGIC CHANGE HERE-----------------------------------------------------------------------------------------------------
         last_trade_price = data['chart_section']['quote']['last_trade_price'] or 0
-        last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price'] or last_trade_price # <-- fixed issue
+        last_non_reg_price = data['chart_section']['quote']['last_non_reg_trade_price'] or last_trade_price 
         extended_hours_price = data['chart_section']['quote']['last_extended_hours_trade_price'] or 0
         previous_close_price = data['chart_section']['quote']['previous_close'] or 0
         adjusted_previous_close_price = data['chart_section']['quote']['adjusted_previous_close'] or 0
@@ -245,21 +155,6 @@ async def fetch_symbol_metrics(session, symbol):
         dollar_change = round(float(last_non_reg_price) - float(adjusted_previous_close_price), 2)
         percent_change = round(dollar_change / float(adjusted_previous_close_price) * 100, 2)
         overnight = previous_close_price != last_non_reg_price
-####LOGIC CHANGE HERE-----------------------------------------------------------------------------------------------------
-
-# FOR DEBUG
-        # print("Instrument id:" + str(instrument_id) + " | " + \
-        #       "Market cap: " + str(market_cap) + " | " + \
-        #         "Volume: " + str(volume) + " | " + \
-        #         "Average volume: " + str(average_volume) + " | " + \
-        #         "Dollar change: " + str(dollar_change) + " | " + \
-        #         "Percent change: " + str(percent_change) + " | " + \
-        #         "Last trade price: " + str(last_trade_price) + " | " + \
-        #         "Last non-reg price: " + str(last_non_reg_price) + " | " + \
-        #         "Extended hours price: " + str(extended_hours_price) + " | " + \
-        #         "Previous close price: " + str(previous_close_price) + " | " + \
-        #         "Adjusted previous close price: " + str(adjusted_previous_close_price) + " | " + \
-        #         "Overnight: " + str(overnight) + " | ")
                 
         # Process and return everything important as a tuple
         return instrument_id, market_cap, volume, average_volume, dollar_change, percent_change, last_trade_price, last_non_reg_price, extended_hours_price, previous_close_price, adjusted_previous_close_price, overnight
@@ -267,23 +162,6 @@ async def fetch_symbol_metrics(session, symbol):
     except Exception as e:
         print(f"Error fetching instrument ID for {symbol}: {e}")
 
-'''
-async def fetch_symbol_metrics_limited(session, token, symbol):
-    sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
-    async with sem:
-        # This will limit the number of concurrent requests to CONCURRENT_REQUESTS
-        return await fetch_symbol_metrics(session, token, symbol)
-
-
-async def fetch_all_symbols(symbols, token):
-    connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        # Create a list of tasks for each symbol
-        tasks = [fetch_symbol_metrics_limited(session, token, symbol) for symbol in symbols]
-        results = await asyncio.gather(*tasks)
-
-    return results
-'''
 
 async def fetch_symbol_metrics_limited(session, symbol):
     sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
@@ -300,6 +178,7 @@ async def fetch_all_symbols(symbols):
         results = await asyncio.gather(*tasks)
 
     return results
+
 
 def create_heat_map(dataframe, map_title):    
     palette = {
@@ -332,7 +211,7 @@ def create_heat_map(dataframe, map_title):
     except IndexError:
         # If there is no overnight trading data, set overnight_off to 0
         overnight_off = 0
-    print(f"{map_title}\nOvernight on: {overnight_on}, Overnight off: {overnight_off}")
+    print(f"{map_title}, Overnight on: {overnight_on}, Overnight off: {overnight_off}")
 
     # New York timezone
     ny_tz = pytz.timezone("America/New_York")
@@ -486,56 +365,15 @@ def create_heat_map(dataframe, map_title):
         margin=dict(l=30, r=30, t=30, b=0),  # Remove margins
     )
 
-    print("Fig created for " + map_title)
+    print("Fig created for " + map_title + "\n")
     return fig
 
-'''
-def preload_figures(token):
+
+def load_figures():
+    start = time.time()
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
-
-    # Debug
-    if not token:
-        print("❌ Bearer token was None — likely token fetch failure.")
-    else:
-        print("✅ Bearer token is not none, proceeding with data fetch...")
-
-    # S&P 500
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
-                          "name", "symbol", "sector", "subsector"])
-    spx_results = asyncio.run(fetch_all_symbols(
-        spx_df['symbol'].tolist(), token))
-    # Filter out None results
-    valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
-    spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                        "dollar_change", "percent_change", "last_trade_price",
-                                                        "last_non_reg_price", "extended_hours_price",
-                                                        "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    spx_df = spx_df.iloc[valid_indices].reset_index(drop=True)
-    spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
-    spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
-    spx_fig = create_heat_map(spx_total_df, "S&P 500")
-
-    # NASDAQ
-    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
-                             "name", "symbol", "sector", "subsector"])
-    nasdaq_results = asyncio.run(fetch_all_symbols(
-        nasdaq_df['symbol'].tolist(), token))
-    valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
-    nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                              "dollar_change", "percent_change", "last_trade_price",
-                                                              "last_non_reg_price", "extended_hours_price",
-                                                              "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    nasdaq_df = nasdaq_df.iloc[valid_indices].reset_index(drop=True)
-    nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
-    nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
-    nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
-'''
-
-def preload_figures():
-    global spx_fig, nasdaq_fig
-    global spx_total_df, nasdaq_total_df
-
+    
 
 
     # S&P 500
@@ -559,6 +397,7 @@ def preload_figures():
                              "name", "symbol", "sector", "subsector"])
     nasdaq_results = asyncio.run(fetch_all_symbols(
         nasdaq_df['symbol'].tolist()))
+    # Filter out None results
     valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
     nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
                                                               "dollar_change", "percent_change", "last_trade_price",
@@ -568,7 +407,8 @@ def preload_figures():
     nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
     nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
-    
+    print(f"load_figures() took {time.time() - start:.2f} seconds")
+
     
 def generate_table(df, title, max_rows=30):
     df_sorted = df.sort_values(by="percent_change", ascending=False)
@@ -624,38 +464,52 @@ app.layout = html.Div([
         dcc.Tab(label='List View S&P 500', value='listview_spx'),
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
     ]),
+    
+    ####------------------------------ OLD
+    # html.Div(id='content-container'),
+    # dcc.Interval(id='refresh-interval', interval=15 * 60 * 1000, n_intervals=0),  # 15 minutes
+    ####------------------------------ OLD
+    
     html.Div(id='content-container'),
-    dcc.Interval(id='refresh-interval', interval=2 * 60 * 1000, n_intervals=0),  # 2 minutes
+    
+    # Interval that only updates data (invisible)
+    dcc.Interval(id='data-refresh-interval', interval=14 * 60 * 1000, n_intervals=0),  # 14 minutes
+    
+    # Interval that triggers tab re-render
+    dcc.Interval(id='ui-refresh-interval', interval=15 * 60 * 1000, n_intervals=0),  # 15 minutes
+    
+    # Dummy div for triggering data refresh callback
+    html.Div(id='data-refresh-dummy', style={'display': 'none'})
+    
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'}) # this bg color sets the color when loading initially
 
 # Define callback to update the graph
 @app.callback(
+    Output('data-refresh-dummy', 'children'),
+    Input('data-refresh-interval', 'n_intervals')
+)
+def background_data_refresh(n):
+    ctx = callback_context
+    print("Callback in background_data_refresh() was triggered by:", ctx.triggered)
+    print(f"🔄 Refreshing data at 14-minute interval (n={n})")
+    if not skipRefreshDueToWeekend():
+        print("It wasn't a weekend, so refresh is allowed... calling load_figures()")
+        load_figures()
+    else:
+        print("It was a weekend, so refresh is not allowed")
+    print()
+    return f"Refreshed at {datetime.now()}"  # dummy output
+
+@app.callback(
     Output('content-container', 'children'),
     Input('index-tabs', 'value'),
-    Input('refresh-interval', 'n_intervals')
+    Input('ui-refresh-interval', 'n_intervals')
 )
 def update_content(selected_index, n):
     ctx = callback_context
-
-    # global current_token, last_token_hour
-
-    if ctx.triggered and ctx.triggered[0]['prop_id'].split('.')[0] == 'refresh-interval':
-        # Get current Eastern Time hour
-        ny_tz = pytz.timezone("America/New_York")
-        now = datetime.now(ny_tz)
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
-        
-        '''
-        # Refresh token only if it's a new hour
-        if last_token_hour != current_hour:
-            print(f"🕒 New hour detected: {current_hour.strftime('%I:%M %p %Z')}. Refreshing token...")
-            current_token = get_robinhood_bearer_token()
-            last_token_hour = current_hour
-        else:
-            print(f"✅ Reusing existing token from {last_token_hour.strftime('%I:%M %p %Z')}.")
-        '''
-        preload_figures()
-
+    print("Callback in update_content() was triggered by:", ctx.triggered)
+    print(f"Updating UI at 15-minute interval (aka without data refresh)... (n={n}), tab={selected_index}")
+    print()
 
     if selected_index == 'sp500':
         return html.Div([
@@ -681,13 +535,6 @@ def update_content(selected_index, n):
 
 if __name__ == "__main__":
     ny_tz = pytz.timezone("America/New_York")
-    # last_token_hour = datetime.now(ny_tz).replace(minute=0, second=0, microsecond=0)
-
-    '''
-    current_token = "get_robinhood_bearer_token()"
-    preload_figures(current_token)
-    '''
-    
-    preload_figures()
-    
+    print("Starting with intitial call to load_figures() upon first run...")
+    load_figures()
     app.run(debug=True)
