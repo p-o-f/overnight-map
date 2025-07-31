@@ -20,7 +20,7 @@ import aiohttp
 
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
-CONCURRENT_REQUESTS = 30  # Can be tuned higher/lower based on network stability
+CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
 
 # Initialize Dash app
 app = dash.Dash(__name__)
@@ -372,39 +372,52 @@ def create_heat_map(dataframe, map_title):
 
 def load_figures():
     start = time.time()
+    
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
-    
-    # S&P 500
-    spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
-                          "name", "symbol", "sector", "subsector"])
-    spx_results = asyncio.run(fetch_all_symbols(
-        spx_df['symbol'].tolist()))
-    # Filter out None results
-    valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
-    spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                        "dollar_change", "percent_change", "last_trade_price",
-                                                        "last_non_reg_price", "extended_hours_price",
-                                                        "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    spx_df = spx_df.iloc[valid_indices].reset_index(drop=True)
-    spx_total_df = pd.concat([spx_df, spx_metrics_df], axis=1)
-    spx_total_df = spx_total_df[spx_total_df["symbol"] != "GOOGL"]
-    spx_fig = create_heat_map(spx_total_df, "S&P 500")
 
-    # NASDAQ
-    nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
-                             "name", "symbol", "sector", "subsector"])
-    nasdaq_results = asyncio.run(fetch_all_symbols(
-        nasdaq_df['symbol'].tolist()))
-    # Filter out None results
-    valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
-    nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=["instrument_id", "market_cap", "volume", "average_volume",
-                                                              "dollar_change", "percent_change", "last_trade_price",
-                                                              "last_non_reg_price", "extended_hours_price",
-                                                              "previous_close_price", "adjusted_previous_close_price", "overnight"])
-    nasdaq_df = nasdaq_df.iloc[valid_indices].reset_index(drop=True)
-    nasdaq_total_df = pd.concat([nasdaq_df, nasdaq_metrics_df], axis=1)
-    nasdaq_total_df = nasdaq_total_df[nasdaq_total_df["symbol"] != "GOOGL"]
+    async def load_both_indices():
+        # Fetch index metadata (blocking)
+        spx_df = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
+        nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
+
+        # Run both fetches concurrently
+        spx_task = fetch_all_symbols(spx_df['symbol'].tolist())
+        nasdaq_task = fetch_all_symbols(nasdaq_df['symbol'].tolist())
+        spx_results, nasdaq_results = await asyncio.gather(spx_task, nasdaq_task)
+
+        # --- Process S&P 500 ---
+        spx_valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
+        spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=[
+            "instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change",
+            "last_trade_price", "last_non_reg_price", "extended_hours_price", "previous_close_price",
+            "adjusted_previous_close_price", "overnight"
+        ])
+        spx_df_valid = spx_df.iloc[spx_valid_indices].reset_index(drop=True)
+        spx_total = pd.concat([spx_df_valid, spx_metrics_df], axis=1)
+        spx_total = spx_total[spx_total["symbol"] != "GOOGL"]
+        # ------------------------
+
+        # --- Process NASDAQ 100 ---
+        nasdaq_valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
+        nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=[
+            "instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change",
+            "last_trade_price", "last_non_reg_price", "extended_hours_price", "previous_close_price",
+            "adjusted_previous_close_price", "overnight"
+        ])
+        nasdaq_df_valid = nasdaq_df.iloc[nasdaq_valid_indices].reset_index(drop=True)
+        nasdaq_total = pd.concat([nasdaq_df_valid, nasdaq_metrics_df], axis=1)
+        nasdaq_total = nasdaq_total[nasdaq_total["symbol"] != "GOOGL"]
+        # ------------------------
+
+        # Store results to global state
+        return spx_total, nasdaq_total
+
+    # Run the async loader
+    spx_total_df, nasdaq_total_df = asyncio.run(load_both_indices())
+
+    # Build figures after data is loaded
+    spx_fig = create_heat_map(spx_total_df, "S&P 500")
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
     print(f"load_figures() took {time.time() - start:.2f} seconds")
 
