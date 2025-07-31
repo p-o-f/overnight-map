@@ -31,6 +31,8 @@ spx_fig = None
 nasdaq_fig = None
 spx_total_df = None
 nasdaq_total_df = None
+spx_table = None
+nasdaq_table = None
 
 BOTTOM_CAPTION = html.P([
     "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
@@ -201,20 +203,10 @@ def create_heat_map(dataframe, map_title):
     dataframe['transformed_market_cap'] = np.power(dataframe['market_cap'], power)
 
     # Create formatted label with percent change
-    
-    # OLD
-    # dataframe['symbol_with_change'] = dataframe.apply(
-    #     lambda row: f"<span style='font-size: larger; color: white;'>{row['symbol']}</span><br><span style='color: white;'>{row['percent_change']:+.2f}%</span>",
-    #     axis=1
-    # )
-    # OLD
-    
-    # ^ vectorized equivalent
     dataframe['symbol_with_change'] = (
     "<span style='font-size: larger; color: white;'>" + dataframe['symbol'] + "</span><br>"
     "<span style='color: white;'>" + dataframe['percent_change'].map("{:+.2f}%".format) + "</span>"
         )
-
 
     overnight_on = dataframe['overnight'].value_counts().iloc[0]
     try:
@@ -386,6 +378,7 @@ def load_figures():
     
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
+    global spx_table, nasdaq_table
 
     async def load_both_indices():
         # Fetch index metadata (blocking)
@@ -403,36 +396,18 @@ def load_figures():
             "adjusted_previous_close_price", "overnight"
         ]
         # --- Process S&P 500 ---
-        
-        # OLD
-        # spx_valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
-        # spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=column_names)
-        # spx_df_valid = spx_df.iloc[spx_valid_indices].reset_index(drop=True)
-        # OLD
-        
-        # Replace ^ with single pass
         spx_valid_data = [(i, r) for i, r in enumerate(spx_results) if r is not None]
         spx_valid_indices, spx_metrics = zip(*spx_valid_data) if spx_valid_data else ([], [])
-
         spx_metrics_df = pd.DataFrame(spx_metrics, columns=column_names)
         spx_df_valid = spx_df.iloc[list(spx_valid_indices)].reset_index(drop=True)
-
 
         spx_total = pd.concat([spx_df_valid, spx_metrics_df], axis=1)
         spx_total = spx_total[spx_total["symbol"] != "GOOGL"]
         # ------------------------
 
         # --- Process NASDAQ 100 ---
-        # OLD
-        # nasdaq_valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
-        # nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=column_names)
-        # nasdaq_df_valid = nasdaq_df.iloc[nasdaq_valid_indices].reset_index(drop=True)
-        # OLD 
-        
-        # Replace ^ with single pass
         nasdaq_valid_data = [(i, r) for i, r in enumerate(nasdaq_results) if r is not None]
         nasdaq_valid_indices, nasdaq_metrics = zip(*nasdaq_valid_data) if nasdaq_valid_data else ([], [])
-
         nasdaq_metrics_df = pd.DataFrame(nasdaq_metrics, columns=column_names)
         nasdaq_df_valid = nasdaq_df.iloc[list(nasdaq_valid_indices)].reset_index(drop=True)
 
@@ -449,6 +424,10 @@ def load_figures():
     # Build figures after data is loaded
     spx_fig = create_heat_map(spx_total_df, "S&P 500")
     nasdaq_fig = create_heat_map(nasdaq_total_df, "NASDAQ 100")
+    
+    # Cache pre-rendered tables from df
+    spx_table = generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0)
+    nasdaq_table = generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0)
     print(f"load_figures() took {time.time() - start:.2f} seconds")
 
     
@@ -519,8 +498,8 @@ app.layout = html.Div([
     
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'}) # this bg color sets the color when loading initially
 
-# Define callback to update the graph
-@app.callback(
+# Define callbacks to update the graph
+@app.callback( # Every 14 mins
     Output('data-refresh-dummy', 'children'),
     Input('data-refresh-interval', 'n_intervals')
 )
@@ -536,7 +515,7 @@ def background_data_refresh(n):
     print()
     return f"Refreshed at {datetime.now()}"  # dummy output
 
-@app.callback(
+@app.callback( # Every 15 mins
     Output('content-container', 'children'),
     Input('index-tabs', 'value'),
     Input('ui-refresh-interval', 'n_intervals')
@@ -559,12 +538,12 @@ def update_content(selected_index, n):
         ])
     elif selected_index == 'listview_spx':
         return html.Div([
-            generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0),
+            spx_table,
             BOTTOM_CAPTION
         ])
     elif selected_index == 'listview_nasdaq':
         return html.Div([
-            generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0),
+            nasdaq_table,
             BOTTOM_CAPTION
         ])
 
