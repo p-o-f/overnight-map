@@ -95,6 +95,7 @@ async def fetch_json(session, url, headers=None, params=None, retries=MAX_RETRIE
         except Exception as e:
             print(f"Attempt {attempt+1} failed for {url}: {e}")
         await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
+    print(f"❌ Final failure for URL: {url}")
     return None #TODO <-- fix this line later to do something more useful
 
 
@@ -164,8 +165,7 @@ async def fetch_symbol_metrics(session, symbol):
         print(f"Error fetching instrument ID for {symbol}: {e}")
 
 
-async def fetch_symbol_metrics_limited(session, symbol):
-    sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
+async def fetch_symbol_metrics_limited(session, symbol, sem):
     async with sem:
         # This will limit the number of concurrent requests to CONCURRENT_REQUESTS
         return await fetch_symbol_metrics(session, symbol)
@@ -173,9 +173,10 @@ async def fetch_symbol_metrics_limited(session, symbol):
 
 async def fetch_all_symbols(symbols):
     connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
+    sem = asyncio.Semaphore(CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession(connector=connector) as session:
         # Create a list of tasks for each symbol
-        tasks = [fetch_symbol_metrics_limited(session, symbol) for symbol in symbols]
+        tasks = [fetch_symbol_metrics_limited(session, symbol, sem) for symbol in symbols]
         results = await asyncio.gather(*tasks)
 
     return results
@@ -200,10 +201,20 @@ def create_heat_map(dataframe, map_title):
     dataframe['transformed_market_cap'] = np.power(dataframe['market_cap'], power)
 
     # Create formatted label with percent change
-    dataframe['symbol_with_change'] = dataframe.apply(
-        lambda row: f"<span style='font-size: larger; color: white;'>{row['symbol']}</span><br><span style='color: white;'>{row['percent_change']:+.2f}%</span>",
-        axis=1
-    )
+    
+    # OLD
+    # dataframe['symbol_with_change'] = dataframe.apply(
+    #     lambda row: f"<span style='font-size: larger; color: white;'>{row['symbol']}</span><br><span style='color: white;'>{row['percent_change']:+.2f}%</span>",
+    #     axis=1
+    # )
+    # OLD
+    
+    # ^ vectorized equivalent
+    dataframe['symbol_with_change'] = (
+    "<span style='font-size: larger; color: white;'>" + dataframe['symbol'] + "</span><br>"
+    "<span style='color: white;'>" + dataframe['percent_change'].map("{:+.2f}%".format) + "</span>"
+        )
+
 
     overnight_on = dataframe['overnight'].value_counts().iloc[0]
     try:
@@ -386,26 +397,45 @@ def load_figures():
         nasdaq_task = fetch_all_symbols(nasdaq_df['symbol'].tolist())
         spx_results, nasdaq_results = await asyncio.gather(spx_task, nasdaq_task)
 
-        # --- Process S&P 500 ---
-        spx_valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
-        spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=[
+        column_names = [
             "instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change",
             "last_trade_price", "last_non_reg_price", "extended_hours_price", "previous_close_price",
             "adjusted_previous_close_price", "overnight"
-        ])
-        spx_df_valid = spx_df.iloc[spx_valid_indices].reset_index(drop=True)
+        ]
+        # --- Process S&P 500 ---
+        
+        # OLD
+        # spx_valid_indices = [i for i, r in enumerate(spx_results) if r is not None]
+        # spx_metrics_df = pd.DataFrame([r for r in spx_results if r is not None], columns=column_names)
+        # spx_df_valid = spx_df.iloc[spx_valid_indices].reset_index(drop=True)
+        # OLD
+        
+        # Replace ^ with single pass
+        spx_valid_data = [(i, r) for i, r in enumerate(spx_results) if r is not None]
+        spx_valid_indices, spx_metrics = zip(*spx_valid_data) if spx_valid_data else ([], [])
+
+        spx_metrics_df = pd.DataFrame(spx_metrics, columns=column_names)
+        spx_df_valid = spx_df.iloc[list(spx_valid_indices)].reset_index(drop=True)
+
+
         spx_total = pd.concat([spx_df_valid, spx_metrics_df], axis=1)
         spx_total = spx_total[spx_total["symbol"] != "GOOGL"]
         # ------------------------
 
         # --- Process NASDAQ 100 ---
-        nasdaq_valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
-        nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=[
-            "instrument_id", "market_cap", "volume", "average_volume", "dollar_change", "percent_change",
-            "last_trade_price", "last_non_reg_price", "extended_hours_price", "previous_close_price",
-            "adjusted_previous_close_price", "overnight"
-        ])
-        nasdaq_df_valid = nasdaq_df.iloc[nasdaq_valid_indices].reset_index(drop=True)
+        # OLD
+        # nasdaq_valid_indices = [i for i, r in enumerate(nasdaq_results) if r is not None]
+        # nasdaq_metrics_df = pd.DataFrame([r for r in nasdaq_results if r is not None], columns=column_names)
+        # nasdaq_df_valid = nasdaq_df.iloc[nasdaq_valid_indices].reset_index(drop=True)
+        # OLD 
+        
+        # Replace ^ with single pass
+        nasdaq_valid_data = [(i, r) for i, r in enumerate(nasdaq_results) if r is not None]
+        nasdaq_valid_indices, nasdaq_metrics = zip(*nasdaq_valid_data) if nasdaq_valid_data else ([], [])
+
+        nasdaq_metrics_df = pd.DataFrame(nasdaq_metrics, columns=column_names)
+        nasdaq_df_valid = nasdaq_df.iloc[list(nasdaq_valid_indices)].reset_index(drop=True)
+
         nasdaq_total = pd.concat([nasdaq_df_valid, nasdaq_metrics_df], axis=1)
         nasdaq_total = nasdaq_total[nasdaq_total["symbol"] != "GOOGL"]
         # ------------------------
