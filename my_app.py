@@ -21,6 +21,7 @@ import aiohttp
 # Constants for async requests
 MAX_RETRIES = 3 # Arbitrary number of retries for failed requests
 CONCURRENT_REQUESTS = 100  # Can be tuned higher/lower based on network stability
+FIRST_LOAD = True  # Flag to indicate if this is the first load of the app
 
 # Initialize Dash app
 app = dash.Dash(__name__)
@@ -506,16 +507,26 @@ app.layout = html.Div([
     Input('data-refresh-interval', 'n_intervals')
 )
 def background_data_refresh(n):
+    global FIRST_LOAD
+    ret = f"background_data_refresh() triggered at {datetime.now()}"  # dummy output
     ctx = callback_context
     print("Callback in background_data_refresh() was triggered by:", ctx.triggered)
+    
+    # Skip this the first time, then don't refresh on subsequent callbacks
+    if (not FIRST_LOAD and ctx.triggered[0]['prop_id'] == '.'):
+        print("Loaded from another device or window, and this is NOT the first time the webapp has been loaded, so skipping refresh...")
+        print()
+        return ret
+    if FIRST_LOAD: 
+        FIRST_LOAD = False
     print(f"🔄 Refreshing data at 14-minute interval (n={n})")
     if not skipRefreshDueToWeekend():
         print("It wasn't a weekend, so refresh is allowed... calling load_figures()")
         load_figures()
     else:
-        print("It was a weekend, so refresh is not allowed")
+        print("It was a weekend, so skipping refresh...")
     print()
-    return f"Refreshed at {datetime.now()}"  # dummy output
+    return ret
 
 @app.callback( # Every 15 mins
     Output('content-container', 'children'),
