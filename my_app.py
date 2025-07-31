@@ -1,7 +1,8 @@
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, time
+from datetime import datetime
+import time
 import pytz
 
 # Plotly 
@@ -374,8 +375,6 @@ def load_figures():
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
     
-
-
     # S&P 500
     spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
                           "name", "symbol", "sector", "subsector"])
@@ -464,14 +463,8 @@ app.layout = html.Div([
         dcc.Tab(label='List View S&P 500', value='listview_spx'),
         dcc.Tab(label='List View NASDAQ 100', value='listview_nasdaq'),
     ]),
-    
-    ####------------------------------ OLD
-    # html.Div(id='content-container'),
-    # dcc.Interval(id='refresh-interval', interval=15 * 60 * 1000, n_intervals=0),  # 15 minutes
-    ####------------------------------ OLD
-    
     html.Div(id='content-container'),
-    
+
     # Interval that only updates data (invisible)
     dcc.Interval(id='data-refresh-interval', interval=14 * 60 * 1000, n_intervals=0),  # 14 minutes
     
