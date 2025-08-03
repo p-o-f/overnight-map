@@ -1,8 +1,8 @@
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime
-import time
+from datetime import datetime, time
+import time as time_module
 import pytz
 
 # Plotly 
@@ -54,6 +54,13 @@ def skipRefreshDueToWeekend():
     
     weekday = now.weekday()  # Monday is 0, Sunday is 6
     current_time = now.time()
+    
+    print("in skipRefreshDuetoWeekend(): now | weekday | current_time")
+    print("----------------------------------------")
+    print(now)
+    print(weekday)
+    print(current_time)
+    print("----------------------------------------")
     
     # RH non 24-5 trading happens from Friday 8:00 PM until Sunday 5:00 PM 
     if weekday == 4:  # Friday
@@ -377,7 +384,7 @@ def create_heat_map(dataframe, map_title):
 
 
 def load_figures():
-    start = time.time()
+    start = time_module.time()
     
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
@@ -431,7 +438,7 @@ def load_figures():
     # Cache pre-rendered tables from df
     spx_table = generate_table(spx_total_df, "S&P 500", len(spx_total_df) if spx_total_df is not None else 0)
     nasdaq_table = generate_table(nasdaq_total_df, "NASDAQ 100", len(nasdaq_total_df) if nasdaq_total_df is not None else 0)
-    print(f"load_figures() took {time.time() - start:.2f} seconds")
+    print(f"load_figures() took {time_module.time() - start:.2f} seconds")
 
     
 def generate_table(df, title, max_rows=30):
