@@ -566,8 +566,13 @@ def background_data_refresh(n):
         print("Loaded from another device or window, and this is NOT the first time the webapp has been loaded, so skipping refresh...")
         print()
         return ret
+    
     if FIRST_LOAD:
+        print("Loading figures due to first load...")
+        load_figures()
         FIRST_LOAD = False
+        print()
+        return ret
 
     print(f"🔄 Refreshing data at 14-minute interval (n={n})")
     if not skipRefreshDueToWeekend():
@@ -617,5 +622,5 @@ def update_content(selected_index, n):
 
 if __name__ == "__main__":
     print("Starting with intitial call to load_figures() upon first run...")
-    load_figures()
+    #load_figures()
     app.run(debug=False, host="0.0.0.0", port=8080)
