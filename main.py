@@ -74,12 +74,12 @@ def skipRefreshDueToWeekend():
     
     # RH non 24-5 trading happens from Friday 8:00 PM until Sunday 5:00 PM
     if weekday == 4:  # Friday
-        if current_time > time(20, 0):  # later than 8:00 PM on Friday
+        if current_time > time(20, 0): # later than 8:00 PM ET on Friday
             return True
     elif weekday in [5]:  # Saturday
         return True
     elif weekday == 6:  # Sunday
-        if current_time < time(17, 0):  # before 5:00 PM on Sunday
+        if current_time < time(20, 0): # before 8:00 PM ET on Sunday
             return True
 
     return False
