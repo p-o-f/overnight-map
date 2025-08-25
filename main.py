@@ -5,6 +5,18 @@ from datetime import datetime, time
 import time as time_module
 import pytz
 
+# Keep track of visitor ip addresses
+from flask import request, session
+import uuid
+import logging
+import os, secrets
+
+logging.basicConfig(# configure logging to a file
+    filename="visitors.log",       # log file name
+    level=logging.INFO,            # log only INFO and above
+    format="%(asctime)s - %(message)s",  # include timestamp automatically
+)
+
 # Plotly
 import plotly.graph_objects as go
 import plotly.express as px
@@ -34,6 +46,32 @@ app = dash.Dash(
     ],
 )
 server = app.server  # This is for Gunicorn to use
+
+server.secret_key = "8fe65edf118b3cc910727a2a8805b7741dcb8fdc5c59a9d3ac5b3f69f759bdc8" # EXAMPLE TEMP FOR TESTING
+
+def get_ip_location(ip):
+    url = f"https://ipinfo.io/{ip}/json"
+    try:
+        response = requests.get(url)
+        data = response.json()
+
+        if "bogon" in data:
+            return "Bogon IP address (non-routable)"
+
+        location_info = {
+            "IP": data.get("ip"),
+            "City": data.get("city"),
+            "Region": data.get("region"),
+            "Country": data.get("country"),
+            "Location": data.get("loc"),
+            "Organization": data.get("org"),
+            "Timezone": data.get("timezone")
+        }
+        return location_info
+
+    except Exception as e:
+        return {"error": str(e)}
+        
 
 # Global constants
 spx_fig = None
