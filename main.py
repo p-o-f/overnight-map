@@ -123,26 +123,26 @@ def skipRefreshDueToWeekend():
     return False
 
 
+HEADERS = {
+    "User-Agent": "247mapbot/1.0 (https://247map.com; pfaruk@asu.edu) requests/2.31.0"
+}
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
-    response = requests.get(url)
+    response = requests.get(url, headers=HEADERS)
     data = response.json()[0]
     stock_attributes = []
-    for company in data[1:]:  # the first element is the header, format is: SYMBOL / COMPANY_NAME / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
-        stock_attributes.append(
-            [company[1], company[0], company[2], company[3]])
+    for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
+        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Formal name, ticker symbol, sector, subsector 
     return stock_attributes
+    
 
-
-def get_nasdaq_index_info():
+def get_nasdaq_index_info():   
     url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
-    response = requests.get(url)
+    response = requests.get(url, headers=HEADERS)
     data = response.json()[0]
     stock_attributes = []
-    # the first element is the header, format is: SYMBOL / COMPANY_NAME / GICS SECTOR / GICS SUB-INDUSTRY
-    for company in data[1:]:
-        stock_attributes.append(
-            [company[1], company[0], company[2], company[3]])
+    for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
+        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Ticker symbol, formal name, sector, subsector FIXED HERE
     return stock_attributes
 
 
