@@ -9,13 +9,8 @@ import pytz
 from flask import request, session
 import uuid
 import logging
-import os, secrets
-
-logging.basicConfig(# configure logging to a file
-    filename="visitors.log",       # log file name
-    level=logging.INFO,            # log only INFO and above
-    format="%(asctime)s - %(message)s",  # include timestamp automatically
-)
+import os
+import secrets
 
 # Plotly
 import plotly.graph_objects as go
@@ -47,31 +42,6 @@ app = dash.Dash(
 )
 server = app.server  # This is for Gunicorn to use
 
-server.secret_key = "8fe65edf118b3cc910727a2a8805b7741dcb8fdc5c59a9d3ac5b3f69f759bdc8" # EXAMPLE TEMP FOR TESTING
-
-def get_ip_location(ip):
-    url = f"https://ipinfo.io/{ip}/json"
-    try:
-        response = requests.get(url)
-        data = response.json()
-
-        if "bogon" in data:
-            return "Bogon IP address (non-routable)"
-
-        location_info = {
-            "IP": data.get("ip"),
-            "City": data.get("city"),
-            "Region": data.get("region"),
-            "Country": data.get("country"),
-            "Location": data.get("loc"),
-            "Organization": data.get("org"),
-            "Timezone": data.get("timezone")
-        }
-        return location_info
-
-    except Exception as e:
-        return {"error": str(e)}
-        
 
 # Global constants
 spx_fig = None
@@ -102,22 +72,22 @@ def skipRefreshDueToWeekend():
 
     weekday = now.weekday()  # Monday is 0, Sunday is 6
     current_time = now.time()
-    
+
     print("in skipRefreshDuetoWeekend(): now | weekday | current_time")
     print("----------------------------------------")
     print(now)
     print(weekday)
     print(current_time)
     print("----------------------------------------")
-    
+
     # RH non 24-5 trading happens from Friday 8:00 PM until Sunday 5:00 PM
     if weekday == 4:  # Friday
-        if current_time > time(20, 0): # later than 8:00 PM ET on Friday
+        if current_time > time(20, 0):  # later than 8:00 PM ET on Friday
             return True
     elif weekday in [5]:  # Saturday
         return True
     elif weekday == 6:  # Sunday
-        if current_time < time(20, 0): # before 8:00 PM ET on Sunday
+        if current_time < time(20, 0):  # before 8:00 PM ET on Sunday
             return True
 
     return False
@@ -126,23 +96,30 @@ def skipRefreshDueToWeekend():
 HEADERS = {
     "User-Agent": "247mapbot/1.0 (https://247map.com; pfaruk@asu.edu) requests/2.31.0"
 }
+
+
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
     response = requests.get(url, headers=HEADERS)
     data = response.json()[0]
     stock_attributes = []
-    for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
-        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Formal name, ticker symbol, sector, subsector 
+    for company in data[1:]:  # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
+        # <- Formal name, ticker symbol, sector, subsector
+        stock_attributes.append(
+            [company[1], company[0], company[2], company[3]])
     return stock_attributes
-    
 
-def get_nasdaq_index_info():   
+
+def get_nasdaq_index_info():
     url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
     response = requests.get(url, headers=HEADERS)
     data = response.json()[0]
     stock_attributes = []
-    for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
-        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Ticker symbol, formal name, sector, subsector FIXED HERE
+    # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
+    for company in data[1:]:
+        # <- Ticker symbol, formal name, sector, subsector FIXED HERE
+        stock_attributes.append(
+            [company[1], company[0], company[2], company[3]])
     return stock_attributes
 
 
@@ -604,7 +581,7 @@ def background_data_refresh(n):
         print("Loaded from another device or window, and this is NOT the first time the webapp has been loaded, so skipping refresh...")
         print()
         return ret
-    
+
     if FIRST_LOAD:
         print("Loading figures due to first load...")
         load_figures()
@@ -660,5 +637,5 @@ def update_content(selected_index, n):
 
 if __name__ == "__main__":
     print("Starting with intitial call to load_figures() upon first run...")
-    #load_figures()
+    # load_figures()
     app.run(debug=False, host="0.0.0.0", port=8080)
