@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import time as time_module
 import pytz
 
@@ -76,6 +76,10 @@ spx_total_df = None
 nasdaq_total_df = None
 spx_table = None
 nasdaq_table = None
+spx_index_cache = None
+nasdaq_index_cache = None
+index_cache_last_updated = None
+data_last_updated = None
 
 BOTTOM_CAPTION = html.P([
     "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
@@ -448,13 +452,26 @@ def load_figures():
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
     global spx_table, nasdaq_table
+    global spx_index_cache, nasdaq_index_cache, index_cache_last_updated
+    global data_last_updated
+
+    # Optimization: Only fetch the list of companies (Wikipedia) if cache is empty or older than 24h.
+    # The list of companies changes rarely, whereas prices change constantly.
+    if spx_index_cache is None or nasdaq_index_cache is None or \
+       (index_cache_last_updated and (datetime.now() - index_cache_last_updated).total_seconds() > 86400):
+        print("Fetching fresh index composition from Wikipedia...")
+        try:
+            spx_index_cache = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
+            nasdaq_index_cache = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
+            index_cache_last_updated = datetime.now()
+        except Exception as e:
+            print(f"Error updating index cache: {e}")
+            if spx_index_cache is None: return # Cannot proceed without index data
 
     async def load_both_indices():
-        # Fetch index metadata (blocking)
-        spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
-                              "name", "symbol", "sector", "subsector"])
-        nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
-                                 "name", "symbol", "sector", "subsector"])
+        # Use cached index definitions
+        spx_df = spx_index_cache
+        nasdaq_df = nasdaq_index_cache
 
         # Run both fetches concurrently
         spx_task = fetch_all_symbols(spx_df['symbol'].tolist())
@@ -507,6 +524,7 @@ def load_figures():
         spx_total_df) if spx_total_df is not None else 0)
     nasdaq_table = generate_table(nasdaq_total_df, "NASDAQ 100", len(
         nasdaq_total_df) if nasdaq_total_df is not None else 0)
+    data_last_updated = datetime.now(ny_tz)
     print(f"load_figures() took {time_module.time() - start:.2f} seconds")
 
 
@@ -571,12 +589,12 @@ app.layout = html.Div([
     html.Div(id='content-container'),
 
     # Interval that only updates data (invisible)
-    dcc.Interval(id='data-refresh-interval', interval=14 *
-                 60 * 1000, n_intervals=0),  # 14 minutes
+    dcc.Interval(id='data-refresh-interval', interval=1 *
+                 60 * 1000, n_intervals=0),  # 1 minute
 
     # Interval that triggers tab re-render
-    dcc.Interval(id='ui-refresh-interval', interval=15 *
-                 60 * 1000, n_intervals=0),  # 15 minutes
+    dcc.Interval(id='ui-refresh-interval', interval=2 *
+                 60 * 1000, n_intervals=0),  # 2 minutes
 
     # Dummy div for triggering data refresh callback
     html.Div(id='data-refresh-dummy', style={'display': 'none'})
@@ -591,7 +609,7 @@ app._favicon = ("assets/icon.ico")
 # Define callbacks to update the graph
 
 
-@app.callback(  # Every 14 mins
+@app.callback(  # Every 1 minute
     Output('data-refresh-dummy', 'children'),
     Input('data-refresh-interval', 'n_intervals')
 )
@@ -615,17 +633,28 @@ def background_data_refresh(n):
         print()
         return ret
 
-    print(f"🔄 Refreshing data at 14-minute interval (n={n})")
+    print(f"🔄 Refreshing data at 1-minute interval (n={n})")
     if not skipRefreshDueToWeekend():
         print("It wasn't a weekend, so refresh is allowed... calling load_figures()")
         load_figures()
     else:
-        print("It was a weekend, so skipping refresh...")
+        # It is the weekend, but check if we have stale data (e.g. from Thursday)
+        # Calculate the start of the current weekend restriction (Friday 8 PM ET)
+        now_ny = datetime.now(ny_tz)
+        # Fri=4, Sat=5, Sun=6.
+        days_offset = (now_ny.weekday() - 4)
+        cutoff_time = now_ny.replace(hour=20, minute=0, second=0, microsecond=0) - timedelta(days=days_offset)
+
+        if data_last_updated is None or data_last_updated < cutoff_time:
+            print("Weekend mode: Data is stale (older than Friday 8 PM ET). Catch-up refresh initiated.")
+            load_figures()
+        else:
+            print("It was a weekend, so skipping refresh...")
     print()
     return ret
 
 
-@app.callback(  # Every 15 mins
+@app.callback(  # Every 2 minutes or on tab change
     Output('content-container', 'children'),
     Input('index-tabs', 'value'),
     Input('ui-refresh-interval', 'n_intervals')
@@ -634,8 +663,12 @@ def update_content(selected_index, n):
     ctx = callback_context
     print("Callback in update_content() was triggered by:", ctx.triggered)
     print(
-        f"Updating UI at 15-minute interval (aka without data refresh)... (n={n}), tab={selected_index}")
+        f"Updating UI at 2-minute interval (aka without data refresh)... (n={n}), tab={selected_index}")
     print()
+
+    # Handle case where figures haven't loaded yet (e.g. immediate startup)
+    if spx_fig is None or nasdaq_fig is None:
+        return html.Div(html.H3("Initializing data... please wait.", style={'color': 'white', 'textAlign': 'center', 'marginTop': '50px'}))
 
     if selected_index == 'sp500':
         return html.Div([
