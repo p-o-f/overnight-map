@@ -5,13 +5,6 @@ from datetime import datetime, time, timedelta
 import time as time_module
 import pytz
 
-# Keep track of visitor ip addresses
-from flask import request, session
-import uuid
-import logging
-import os
-import secrets
-
 # Plotly
 import plotly.graph_objects as go
 import plotly.express as px
@@ -461,12 +454,15 @@ def load_figures():
        (index_cache_last_updated and (datetime.now() - index_cache_last_updated).total_seconds() > 86400):
         print("Fetching fresh index composition from Wikipedia...")
         try:
-            spx_index_cache = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
-            nasdaq_index_cache = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
+            spx_index_cache = pd.DataFrame(get_sp500_index_info(), columns=[
+                                           "name", "symbol", "sector", "subsector"])
+            nasdaq_index_cache = pd.DataFrame(get_nasdaq_index_info(), columns=[
+                                              "name", "symbol", "sector", "subsector"])
             index_cache_last_updated = datetime.now()
         except Exception as e:
             print(f"Error updating index cache: {e}")
-            if spx_index_cache is None: return # Cannot proceed without index data
+            if spx_index_cache is None:
+                return  # Cannot proceed without index data
 
     async def load_both_indices():
         # Use cached index definitions
@@ -643,10 +639,12 @@ def background_data_refresh(n):
         now_ny = datetime.now(ny_tz)
         # Fri=4, Sat=5, Sun=6.
         days_offset = (now_ny.weekday() - 4)
-        cutoff_time = now_ny.replace(hour=20, minute=0, second=0, microsecond=0) - timedelta(days=days_offset)
+        cutoff_time = now_ny.replace(
+            hour=20, minute=0, second=0, microsecond=0) - timedelta(days=days_offset)
 
         if data_last_updated is None or data_last_updated < cutoff_time:
-            print("Weekend mode: Data is stale (older than Friday 8 PM ET). Catch-up refresh initiated.")
+            print(
+                "Weekend mode: Data is stale (older than Friday 8 PM ET). Catch-up refresh initiated.")
             load_figures()
         else:
             print("It was a weekend, so skipping refresh...")
