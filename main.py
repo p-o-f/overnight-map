@@ -5,6 +5,13 @@ from datetime import datetime, time, timedelta
 import time as time_module
 import pytz
 
+# Keep track of visitor ip addresses
+from flask import request, session
+import uuid
+import logging
+import os
+import secrets
+
 # Plotly
 import plotly.graph_objects as go
 import plotly.express as px
@@ -19,6 +26,10 @@ from dash.dependencies import Input, Output, State
 # Performance optimizations
 import asyncio
 import aiohttp
+
+# Background Scheduler
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 # Constants for async requests
 MAX_RETRIES = 3  # Arbitrary number of retries for failed requests
@@ -73,6 +84,7 @@ spx_index_cache = None
 nasdaq_index_cache = None
 index_cache_last_updated = None
 data_last_updated = None
+instrument_id_cache = {}
 
 BOTTOM_CAPTION = html.P([
     "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
@@ -185,13 +197,17 @@ async def fetch_symbol_metrics(session, symbol):
         }
 
         # Step 1: Get instrument ID
-        instrument_id_url = f"https://api.robinhood.com/quotes/{symbol}/"
-        id_data = await fetch_json(session, instrument_id_url, basic_headers)
-        if not id_data or 'instrument_id' not in id_data:
-            print(f"Skipping symbol {symbol} due to missing instrument_id.")
-            return None  # Skip this symbol if fetch_json failed
-
-        instrument_id = id_data['instrument_id']
+        # Optimization: Check local cache first to save 1 API call per symbol
+        if symbol in instrument_id_cache:
+            instrument_id = instrument_id_cache[symbol]
+        else:
+            instrument_id_url = f"https://api.robinhood.com/quotes/{symbol}/"
+            id_data = await fetch_json(session, instrument_id_url, basic_headers)
+            if not id_data or 'instrument_id' not in id_data:
+                print(f"Skipping symbol {symbol} due to missing instrument_id.")
+                return None  # Skip this symbol if fetch_json failed
+            instrument_id = id_data['instrument_id']
+            instrument_id_cache[symbol] = instrument_id
 
         # Step 2: Get market cap
         fundamental_data_url = f"https://api.robinhood.com/marketdata/fundamentals/{instrument_id}/?bounds=trading&include_inactive=true"
@@ -454,15 +470,12 @@ def load_figures():
        (index_cache_last_updated and (datetime.now() - index_cache_last_updated).total_seconds() > 86400):
         print("Fetching fresh index composition from Wikipedia...")
         try:
-            spx_index_cache = pd.DataFrame(get_sp500_index_info(), columns=[
-                                           "name", "symbol", "sector", "subsector"])
-            nasdaq_index_cache = pd.DataFrame(get_nasdaq_index_info(), columns=[
-                                              "name", "symbol", "sector", "subsector"])
+            spx_index_cache = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
+            nasdaq_index_cache = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
             index_cache_last_updated = datetime.now()
         except Exception as e:
             print(f"Error updating index cache: {e}")
-            if spx_index_cache is None:
-                return  # Cannot proceed without index data
+            if spx_index_cache is None: return # Cannot proceed without index data
 
     async def load_both_indices():
         # Use cached index definitions
@@ -524,6 +537,21 @@ def load_figures():
     print(f"load_figures() took {time_module.time() - start:.2f} seconds")
 
 
+# --- APScheduler Setup ---
+def run_scheduled_refresh():
+    print(f"⏰ APScheduler triggered at {datetime.now(ny_tz)}")
+    if not skipRefreshDueToWeekend():
+        print("Refresh allowed. Updating figures...")
+        load_figures()
+    else:
+        print("Weekend mode. Skipping refresh.")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=run_scheduled_refresh, trigger="interval", minutes=1, next_run_time=datetime.now())
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
+# -------------------------
+
 def generate_table(df, title, max_rows=30):
     df_sorted = df.sort_values(by="percent_change", ascending=False)
 
@@ -584,16 +612,9 @@ app.layout = html.Div([
     ]),
     html.Div(id='content-container'),
 
-    # Interval that only updates data (invisible)
-    dcc.Interval(id='data-refresh-interval', interval=1 *
-                 60 * 1000, n_intervals=0),  # 1 minute
-
     # Interval that triggers tab re-render
     dcc.Interval(id='ui-refresh-interval', interval=2 *
                  60 * 1000, n_intervals=0),  # 2 minutes
-
-    # Dummy div for triggering data refresh callback
-    html.Div(id='data-refresh-dummy', style={'display': 'none'})
 
     # this bg color sets the color when loading initially
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'})
@@ -603,53 +624,6 @@ app.title = "PF's 24/5 Stock Map"
 app._favicon = ("assets/icon.ico")
 
 # Define callbacks to update the graph
-
-
-@app.callback(  # Every 1 minute
-    Output('data-refresh-dummy', 'children'),
-    Input('data-refresh-interval', 'n_intervals')
-)
-def background_data_refresh(n):
-    global FIRST_LOAD
-    # dummy output
-    ret = f"background_data_refresh() triggered at {datetime.now()}"
-    ctx = callback_context
-    print("Callback in background_data_refresh() was triggered by:", ctx.triggered)
-
-    # Skip this the first time, then don't refresh on subsequent callbacks
-    if (not FIRST_LOAD and ctx.triggered[0]['prop_id'] == '.'):
-        print("Loaded from another device or window, and this is NOT the first time the webapp has been loaded, so skipping refresh...")
-        print()
-        return ret
-
-    if FIRST_LOAD:
-        print("Loading figures due to first load...")
-        load_figures()
-        FIRST_LOAD = False
-        print()
-        return ret
-
-    print(f"🔄 Refreshing data at 1-minute interval (n={n})")
-    if not skipRefreshDueToWeekend():
-        print("It wasn't a weekend, so refresh is allowed... calling load_figures()")
-        load_figures()
-    else:
-        # It is the weekend, but check if we have stale data (e.g. from Thursday)
-        # Calculate the start of the current weekend restriction (Friday 8 PM ET)
-        now_ny = datetime.now(ny_tz)
-        # Fri=4, Sat=5, Sun=6.
-        days_offset = (now_ny.weekday() - 4)
-        cutoff_time = now_ny.replace(
-            hour=20, minute=0, second=0, microsecond=0) - timedelta(days=days_offset)
-
-        if data_last_updated is None or data_last_updated < cutoff_time:
-            print(
-                "Weekend mode: Data is stale (older than Friday 8 PM ET). Catch-up refresh initiated.")
-            load_figures()
-        else:
-            print("It was a weekend, so skipping refresh...")
-    print()
-    return ret
 
 
 @app.callback(  # Every 2 minutes or on tab change
