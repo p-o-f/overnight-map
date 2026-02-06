@@ -1,21 +1,9 @@
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import time as time_module
 import pytz
-
-# Keep track of visitor ip addresses
-from flask import request, session
-import uuid
-import logging
-import os, secrets
-
-logging.basicConfig(# configure logging to a file
-    filename="visitors.log",       # log file name
-    level=logging.INFO,            # log only INFO and above
-    format="%(asctime)s - %(message)s",  # include timestamp automatically
-)
 
 # Plotly
 import plotly.graph_objects as go
@@ -32,6 +20,10 @@ from dash.dependencies import Input, Output, State
 import asyncio
 import aiohttp
 
+# Background Scheduler
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
+
 # Constants for async requests
 MAX_RETRIES = 3  # Arbitrary number of retries for failed requests
 CONCURRENT_REQUESTS = 30  # Can be tuned higher/lower based on network stability
@@ -46,32 +38,33 @@ app = dash.Dash(
     ],
 )
 server = app.server  # This is for Gunicorn to use
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-2FCE4LXTZY"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
 
-server.secret_key = "8fe65edf118b3cc910727a2a8805b7741dcb8fdc5c59a9d3ac5b3f69f759bdc8" # EXAMPLE TEMP FOR TESTING
-
-def get_ip_location(ip):
-    url = f"https://ipinfo.io/{ip}/json"
-    try:
-        response = requests.get(url)
-        data = response.json()
-
-        if "bogon" in data:
-            return "Bogon IP address (non-routable)"
-
-        location_info = {
-            "IP": data.get("ip"),
-            "City": data.get("city"),
-            "Region": data.get("region"),
-            "Country": data.get("country"),
-            "Location": data.get("loc"),
-            "Organization": data.get("org"),
-            "Timezone": data.get("timezone")
-        }
-        return location_info
-
-    except Exception as e:
-        return {"error": str(e)}
-        
+          gtag('config', 'G-2FCE4LXTZY');
+        </script>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
 
 # Global constants
 spx_fig = None
@@ -80,6 +73,11 @@ spx_total_df = None
 nasdaq_total_df = None
 spx_table = None
 nasdaq_table = None
+spx_index_cache = None
+nasdaq_index_cache = None
+index_cache_last_updated = None
+data_last_updated = None
+instrument_id_cache = {}
 
 BOTTOM_CAPTION = html.P([
     "Note: this data is sourced from Robinhood, though this site is not affiliated with Robinhood. ",
@@ -102,22 +100,22 @@ def skipRefreshDueToWeekend():
 
     weekday = now.weekday()  # Monday is 0, Sunday is 6
     current_time = now.time()
-    
+
     print("in skipRefreshDuetoWeekend(): now | weekday | current_time")
     print("----------------------------------------")
     print(now)
     print(weekday)
     print(current_time)
     print("----------------------------------------")
-    
+
     # RH non 24-5 trading happens from Friday 8:00 PM until Sunday 5:00 PM
     if weekday == 4:  # Friday
-        if current_time > time(20, 0): # later than 8:00 PM ET on Friday
+        if current_time > time(20, 0):  # later than 8:00 PM ET on Friday
             return True
     elif weekday in [5]:  # Saturday
         return True
     elif weekday == 6:  # Sunday
-        if current_time < time(20, 0): # before 8:00 PM ET on Sunday
+        if current_time < time(20, 0):  # before 8:00 PM ET on Sunday
             return True
 
     return False
@@ -126,23 +124,30 @@ def skipRefreshDueToWeekend():
 HEADERS = {
     "User-Agent": "247mapbot/1.0 (https://247map.com; pfaruk@asu.edu) requests/2.31.0"
 }
+
+
 def get_sp500_index_info():
     url = 'https://www.wikitable2json.com/api/List_of_S%26P_500_companies?table=0'
     response = requests.get(url, headers=HEADERS)
     data = response.json()[0]
     stock_attributes = []
-    for company in data[1:]: # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
-        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Formal name, ticker symbol, sector, subsector 
+    for company in data[1:]:  # the first element is the header, format is: SYMBOL / SECURITY / GICS SECTOR / GICS SUB-INDUSTRY / HEADQUARTERS LOCATION / DATE FIRST ADDED / CIK / FOUNDED
+        # <- Formal name, ticker symbol, sector, subsector
+        stock_attributes.append(
+            [company[1], company[0], company[2], company[3]])
     return stock_attributes
-    
 
-def get_nasdaq_index_info():   
+
+def get_nasdaq_index_info():
     url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
     response = requests.get(url, headers=HEADERS)
     data = response.json()[0]
     stock_attributes = []
-    for company in data[1:]: # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
-        stock_attributes.append([company[1], company[0], company[2], company[3]]) # <- Ticker symbol, formal name, sector, subsector FIXED HERE
+    # the first element is the header, format is: COMPANY / TICKER / GICS Sector / GICS Sub Industry
+    for company in data[1:]:
+        # <- Ticker symbol, formal name, sector, subsector FIXED HERE
+        stock_attributes.append(
+            [company[1], company[0], company[2], company[3]])
     return stock_attributes
 
 
@@ -185,13 +190,17 @@ async def fetch_symbol_metrics(session, symbol):
         }
 
         # Step 1: Get instrument ID
-        instrument_id_url = f"https://api.robinhood.com/quotes/{symbol}/"
-        id_data = await fetch_json(session, instrument_id_url, basic_headers)
-        if not id_data or 'instrument_id' not in id_data:
-            print(f"Skipping symbol {symbol} due to missing instrument_id.")
-            return None  # Skip this symbol if fetch_json failed
-
-        instrument_id = id_data['instrument_id']
+        # Optimization: Check local cache first to save 1 API call per symbol
+        if symbol in instrument_id_cache:
+            instrument_id = instrument_id_cache[symbol]
+        else:
+            instrument_id_url = f"https://api.robinhood.com/quotes/{symbol}/"
+            id_data = await fetch_json(session, instrument_id_url, basic_headers)
+            if not id_data or 'instrument_id' not in id_data:
+                print(f"Skipping symbol {symbol} due to missing instrument_id.")
+                return None  # Skip this symbol if fetch_json failed
+            instrument_id = id_data['instrument_id']
+            instrument_id_cache[symbol] = instrument_id
 
         # Step 2: Get market cap
         fundamental_data_url = f"https://api.robinhood.com/marketdata/fundamentals/{instrument_id}/?bounds=trading&include_inactive=true"
@@ -445,13 +454,26 @@ def load_figures():
     global spx_fig, nasdaq_fig
     global spx_total_df, nasdaq_total_df
     global spx_table, nasdaq_table
+    global spx_index_cache, nasdaq_index_cache, index_cache_last_updated
+    global data_last_updated
+
+    # Optimization: Only fetch the list of companies (Wikipedia) if cache is empty or older than 24h.
+    # The list of companies changes rarely, whereas prices change constantly.
+    if spx_index_cache is None or nasdaq_index_cache is None or \
+       (index_cache_last_updated and (datetime.now() - index_cache_last_updated).total_seconds() > 86400):
+        print("Fetching fresh index composition from Wikipedia...")
+        try:
+            spx_index_cache = pd.DataFrame(get_sp500_index_info(), columns=["name", "symbol", "sector", "subsector"])
+            nasdaq_index_cache = pd.DataFrame(get_nasdaq_index_info(), columns=["name", "symbol", "sector", "subsector"])
+            index_cache_last_updated = datetime.now()
+        except Exception as e:
+            print(f"Error updating index cache: {e}")
+            if spx_index_cache is None: return # Cannot proceed without index data
 
     async def load_both_indices():
-        # Fetch index metadata (blocking)
-        spx_df = pd.DataFrame(get_sp500_index_info(), columns=[
-                              "name", "symbol", "sector", "subsector"])
-        nasdaq_df = pd.DataFrame(get_nasdaq_index_info(), columns=[
-                                 "name", "symbol", "sector", "subsector"])
+        # Use cached index definitions
+        spx_df = spx_index_cache
+        nasdaq_df = nasdaq_index_cache
 
         # Run both fetches concurrently
         spx_task = fetch_all_symbols(spx_df['symbol'].tolist())
@@ -504,8 +526,24 @@ def load_figures():
         spx_total_df) if spx_total_df is not None else 0)
     nasdaq_table = generate_table(nasdaq_total_df, "NASDAQ 100", len(
         nasdaq_total_df) if nasdaq_total_df is not None else 0)
+    data_last_updated = datetime.now(ny_tz)
     print(f"load_figures() took {time_module.time() - start:.2f} seconds")
 
+
+# --- APScheduler Setup ---
+def run_scheduled_refresh():
+    print(f"⏰ APScheduler triggered at {datetime.now(ny_tz)}")
+    if not skipRefreshDueToWeekend():
+        print("Refresh allowed. Updating figures...")
+        load_figures()
+    else:
+        print("Weekend mode. Skipping refresh.")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=run_scheduled_refresh, trigger="interval", minutes=1, next_run_time=datetime.now())
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
+# -------------------------
 
 def generate_table(df, title, max_rows=30):
     df_sorted = df.sort_values(by="percent_change", ascending=False)
@@ -567,16 +605,9 @@ app.layout = html.Div([
     ]),
     html.Div(id='content-container'),
 
-    # Interval that only updates data (invisible)
-    dcc.Interval(id='data-refresh-interval', interval=14 *
-                 60 * 1000, n_intervals=0),  # 14 minutes
-
     # Interval that triggers tab re-render
-    dcc.Interval(id='ui-refresh-interval', interval=15 *
-                 60 * 1000, n_intervals=0),  # 15 minutes
-
-    # Dummy div for triggering data refresh callback
-    html.Div(id='data-refresh-dummy', style={'display': 'none'})
+    dcc.Interval(id='ui-refresh-interval', interval=2 *
+                 60 * 1000, n_intervals=0),  # 2 minutes
 
     # this bg color sets the color when loading initially
 ], style={'backgroundColor': 'rgb(66, 73, 75)', 'padding': '0px', 'margin': '0px'})
@@ -588,41 +619,7 @@ app._favicon = ("assets/icon.ico")
 # Define callbacks to update the graph
 
 
-@app.callback(  # Every 14 mins
-    Output('data-refresh-dummy', 'children'),
-    Input('data-refresh-interval', 'n_intervals')
-)
-def background_data_refresh(n):
-    global FIRST_LOAD
-    # dummy output
-    ret = f"background_data_refresh() triggered at {datetime.now()}"
-    ctx = callback_context
-    print("Callback in background_data_refresh() was triggered by:", ctx.triggered)
-
-    # Skip this the first time, then don't refresh on subsequent callbacks
-    if (not FIRST_LOAD and ctx.triggered[0]['prop_id'] == '.'):
-        print("Loaded from another device or window, and this is NOT the first time the webapp has been loaded, so skipping refresh...")
-        print()
-        return ret
-    
-    if FIRST_LOAD:
-        print("Loading figures due to first load...")
-        load_figures()
-        FIRST_LOAD = False
-        print()
-        return ret
-
-    print(f"🔄 Refreshing data at 14-minute interval (n={n})")
-    if not skipRefreshDueToWeekend():
-        print("It wasn't a weekend, so refresh is allowed... calling load_figures()")
-        load_figures()
-    else:
-        print("It was a weekend, so skipping refresh...")
-    print()
-    return ret
-
-
-@app.callback(  # Every 15 mins
+@app.callback(  # Every 2 minutes or on tab change
     Output('content-container', 'children'),
     Input('index-tabs', 'value'),
     Input('ui-refresh-interval', 'n_intervals')
@@ -631,8 +628,12 @@ def update_content(selected_index, n):
     ctx = callback_context
     print("Callback in update_content() was triggered by:", ctx.triggered)
     print(
-        f"Updating UI at 15-minute interval (aka without data refresh)... (n={n}), tab={selected_index}")
+        f"Updating UI at 2-minute interval (aka without data refresh)... (n={n}), tab={selected_index}")
     print()
+
+    # Handle case where figures haven't loaded yet (e.g. immediate startup)
+    if spx_fig is None or nasdaq_fig is None:
+        return html.Div(html.H3("Initializing data... please wait.", style={'color': 'white', 'textAlign': 'center', 'marginTop': '50px'}))
 
     if selected_index == 'sp500':
         return html.Div([
@@ -660,5 +661,5 @@ def update_content(selected_index, n):
 
 if __name__ == "__main__":
     print("Starting with intitial call to load_figures() upon first run...")
-    #load_figures()
+    # load_figures()
     app.run(debug=False, host="0.0.0.0", port=8080)
