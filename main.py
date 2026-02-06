@@ -5,13 +5,6 @@ from datetime import datetime, time, timedelta
 import time as time_module
 import pytz
 
-# Keep track of visitor ip addresses
-from flask import request, session
-import uuid
-import logging
-import os
-import secrets
-
 # Plotly
 import plotly.graph_objects as go
 import plotly.express as px
