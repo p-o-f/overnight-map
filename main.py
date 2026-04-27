@@ -139,7 +139,7 @@ def get_sp500_index_info():
 
 
 def get_nasdaq_index_info():
-    url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=3'
+    url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=4'
     response = requests.get(url, headers=HEADERS)
     data = response.json()[0]
     stock_attributes = []
