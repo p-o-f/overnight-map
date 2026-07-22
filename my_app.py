@@ -88,7 +88,7 @@ def get_sp500_index_info():
     
 
 def get_nasdaq_index_info():   
-    url = 'https://www.wikitable2json.com/api/Nasdaq-100?table=4'
+    url = 'https://www.wikitable2json.com/api/List_of_NASDAQ-100_companies'
     response = requests.get(url, headers=HEADERS)
     data = response.json()[0]
     stock_attributes = []
@@ -578,5 +578,5 @@ def update_content(selected_index, n):
 
 if __name__ == "__main__":
     print("Starting with intitial call to load_figures() upon first run...")
-    #load_figures()
+    load_figures()
     app.run(debug=True)
